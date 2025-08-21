@@ -26,7 +26,7 @@ docker build --pull --no-cache -t claude_code_container .
 ./run_sequence_incontext.sh /path/to/your/project "this is my seed prompt"
 
 # Or run a sequence of commands in the container (with rollup handoffs), then exit
-./run_sequence_handoffs.sh /path/to/your/project "this is my seed prompt"
+./run_sequence_handoff.sh /path/to/your/project "this is my seed prompt"
 ```
 
 Note: The first time running `run.sh`, you may have to login to Claude Code. This should only occur once. All subsequent uses of `run.sh` should not require you to log into Claude Code.
