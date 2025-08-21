@@ -195,68 +195,89 @@ STAGES=(
     "test_joke"
 )
 
-# Structured handoff prompt - captures essential context
+# Rolling handoff prompt - consolidates all prior work into current summary
 generate_handoff_prompt() {
     local stage_name="$1"
     local stage_num="$2"
-    echo "/plan Save all information from this chat into your markdown plan file(s), then generate a detailed handoff summary.
-    
+    echo "/plan Save all information from this chat into your markdown plan file(s), then generate a comprehensive handoff summary.
+
+IMPORTANT: Before writing your summary, examine the handoff directory at /workspace/plan/handoffs/ and read ALL prior stage handoff files (stage_1_handoff.txt, stage_2_handoff.txt, etc.) to understand the complete workflow context.
+
+Your handoff summary should consolidate:
+1. ALL essential information from the original task
+2. ALL work completed in previous stages (from prior handoffs)  
+3. ALL work completed in this current stage (from this chat)
+
 Include:
 
-## Current Stage: $stage_name (Stage $stage_num)
+## Consolidated Workflow Summary: $stage_name (Stage $stage_num)
 
-## Essential Context
-- All information and principles from the original task specified by the user
-- All information from this chat
-- All project files created, modified, or deleted
-- All plan/markdown files created, modified, or deleted
-- Critical decisions made
-- Any blockers or issues encountered
-- Don't overcomplicate the handoff summary.
+## Complete Task Context
+- Original task and requirements
+- All work completed across ALL stages so far
+- All project files created, modified, or deleted (all stages)
+- All plan/markdown files created, modified, or deleted (all stages)
+- All critical decisions made throughout workflow
+- Any blockers or issues encountered (any stage)
+- Maintain a timelines across all stages.
 
-## Current State
-- Information about all relevant files and directories
-- Current status of the main task/objective
-- Any intermediate results or findings
+## Current Workflow State
+- Complete status of the main task/objective
+- All relevant files and directories from entire workflow
+- All intermediate results and findings so far
+- Progress made across all stages
 
 ## For Next Stage
 - What the next stage should focus on
 - Any specific requirements or constraints
 - Files/directories they should examine first
-- If there is nothing left to do, just say so. Don't make up anything for the sake of it.
+- Complete context needed to continue the work
+- If workflow is complete, clearly state this
 
-## Handoff Data
-- Keep this summary under 1000 words
-- Focus on actionable information
-- Include specific file paths and concrete results
-- Omit detailed explanations (focus on facts and next steps)
+## Instructions
+- This summary will be the ONLY context passed to the next stage
+- Include everything important from the entire workflow so far
+- No word limit - be as comprehensive as needed
+- Focus on actionable information and concrete results
+- Include specific file paths and complete status
+- This is a rolling summary - each stage builds on all previous work
 
-Output this handoff summary in plain text (not markdown) for easy parsing."
+Output this consolidated handoff summary in plain text (not markdown) for easy parsing."
 }
 
-# Build context prompt from previous handoffs
+# Build context prompt from most recent handoff only (rolling summary approach)
 build_context_from_handoffs() {
     local current_stage_num="$1"
     local context=""
     
-    # Add initial task context
-    if [ -f "$HOST_HANDOFF_DIR/initial_task.txt" ]; then
-        context="## Original Task
+    # For Stage 1, only provide original task
+    if [ "$current_stage_num" -eq 1 ]; then
+        if [ -f "$HOST_HANDOFF_DIR/initial_task.txt" ]; then
+            context="## Original Task
 $(cat "$HOST_HANDOFF_DIR/initial_task.txt")
 
 "
-    fi
-    
-    # Add summaries from all previous stages
-    for ((i=1; i<current_stage_num; i++)); do
-        local handoff_file="$HOST_HANDOFF_DIR/stage_${i}_handoff.txt"
-        if [ -f "$handoff_file" ]; then
-            context="${context}## Previous Stage $i Summary
-$(cat "$handoff_file")
+        fi
+    else
+        # For Stage 2+, only provide the most recent handoff (which contains all consolidated info)
+        local most_recent_stage=$((current_stage_num - 1))
+        local most_recent_handoff="$HOST_HANDOFF_DIR/stage_${most_recent_stage}_handoff.txt"
+        
+        if [ -f "$most_recent_handoff" ]; then
+            context="## Previous Stage Summary (All Workflow Context)
+$(cat "$most_recent_handoff")
 
 "
+        else
+            # Fallback to original task if no prior handoff exists
+            if [ -f "$HOST_HANDOFF_DIR/initial_task.txt" ]; then
+                context="## Original Task
+$(cat "$HOST_HANDOFF_DIR/initial_task.txt")
+
+"
+            fi
         fi
-    done
+    fi
     
     echo "$context"
 }
