@@ -197,6 +197,7 @@ update_workflow_status "STARTING" "" "Initializing workflow components"
 STAGES=(
     "investigate"
     "plan"
+    "plan"
     "plan" 
     "executeverify"
     "executeverify"
