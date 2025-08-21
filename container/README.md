@@ -21,6 +21,9 @@ docker build --pull --no-cache -t claude_code_container .
 
 # Or run a single command in the container, then exit
 ./run_command.sh /path/to/your/project "this is my prompt, which will execute in the container"
+
+# Or run a sequence of commands in the container, then exit
+./run_sequence.sh /path/to/your/project "this is my seed prompt"
 ```
 
 Note: The first time running `run.sh`, you may have to login to Claude Code. This should only occur once. All subsequent uses of `run.sh` should not require you to log into Claude Code.
