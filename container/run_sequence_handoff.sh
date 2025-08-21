@@ -58,6 +58,11 @@ elif [ $# -eq 1 ]; then
         exit 1
     fi
     REPO_DIR="$(pwd)"
+    # Verify current directory is valid
+    if [ ! -d "$REPO_DIR" ]; then
+        echo "Error: Current directory is not accessible"
+        exit 1
+    fi
     INITIAL_TASK="$1"
 elif [ $# -eq 2 ]; then
     # Two arguments: first is directory, second is task
@@ -86,6 +91,14 @@ else
     exit 1
 fi
 SESSION_ID=$(uuidgen 2>/dev/null || echo "session-$$-$(date +%s)")
+
+# Check if Claude authentication exists
+if [ ! -d "$HOME/.claude" ]; then
+    echo "Error: No Claude authentication found on your system"
+    echo "Please run 'claude' first and complete authentication"
+    echo "This works with both API and subscription authentication"
+    exit 1
+fi
 
 # Detect host timezone (macOS)
 HOST_TZ=""
@@ -541,10 +554,19 @@ CONTAINER_START_TIME=$(date +%s)
 docker run -d --name "$CONTAINER_NAME" \
     --mount type=bind,source="$REPO_DIR",target=/workspace \
     --mount type=bind,source="$HOME/.claude",target=/home/dev/.claude \
-    --user 1000:1000 --workdir /workspace \
+    --network bridge \
+    --user 1000:1000 \
+    --workdir /workspace \
+    --env TERM=xterm-256color \
+    --env IS_SANDBOX=1 \
     --env CLAUDE_CONFIG_DIR=/home/dev/.claude \
     --env CLAUDE_CODE_BYPASS_ALL_PERMISSIONS=1 \
     --env CLAUDE_CODE_SUPPRESS_UI_PROMPTS=1 \
+    --env ANTHROPIC_DISABLE_SAFETY_CHECKS=1 \
+    --env CLAUDE_CODE_ENTERPRISE_MODE=1 \
+    --env DISABLE_AUTOUPDATER=1 \
+    --env CLAUDE_CODE_ENABLE_TELEMETRY=0 \
+    --env CLAUDE_WORKING_DIRECTORIES="/workspace:/workspace/..:/:/home:/etc:/usr:/var:/tmp:/root" \
     ${HOST_TZ:+--env TZ="$HOST_TZ"} \
     claude_code_container tail -f /dev/null > /dev/null 2>&1
 
