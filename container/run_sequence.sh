@@ -162,7 +162,7 @@ get_prompt() {
         "investigate") 
             echo "/plan conduct deep and thorough investigations, research, testing, debugging, etc on the task at hand. do not plan/execute yet, just investigate/research. $PLAN_SUFFIX" ;;
         "plan") 
-            echo "/plan create a detailed plan for the task at hand. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. $PLAN_SUFFIX" ;;
+            echo "/plan create / continue to flesh out the plan. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. $PLAN_SUFFIX" ;;
         "compact") 
             echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
         "execute") 
