@@ -5,8 +5,86 @@
 
 set -e
 
-REPO_DIR="$1"
-INITIAL_TASK="${2:-}"
+# Usage and help functions
+show_usage() {
+    cat << EOF
+Usage: 
+  $0 <initial_task>                    # Execute in current directory
+  $0 <project_directory> <initial_task> # Execute in specified directory
+  $0 --help | -h                      # Show this help
+
+Description:
+  Runs a multi-stage Claude Code workflow with context handoffs.
+  Each stage runs as a separate conversation with structured summaries.
+
+Arguments:
+  project_directory    Path to your project directory (optional, defaults to current)
+  initial_task        Description of the task to complete (supports multi-line)
+
+Examples:
+  $0 "Analyze and fix test suite"
+  $0 /path/to/project "Build a calculator app"
+  $0 ~/myproject "Review code and suggest improvements"
+
+Monitoring:
+  - Watch terminal output for real-time progress
+  - Check /workspace/plan/handoffs/ for stage files and status
+
+Files Created:
+  /workspace/plan/handoffs/workflow_status.txt    # Current status
+  /workspace/plan/handoffs/workflow_log.txt       # Complete log
+  /workspace/plan/handoffs/stage_N_handoff.txt    # Stage summaries
+EOF
+}
+
+# Handle help flags
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    show_usage
+    exit 0
+fi
+
+# Input validation and argument parsing
+if [ $# -eq 0 ]; then
+    echo "Error: No arguments provided"
+    echo ""
+    show_usage
+    exit 1
+elif [ $# -eq 1 ]; then
+    # Single argument: use current directory, argument is task
+    if [ -z "$1" ]; then
+        echo "Error: Initial task cannot be empty"
+        echo ""
+        show_usage
+        exit 1
+    fi
+    REPO_DIR="$(pwd)"
+    INITIAL_TASK="$1"
+elif [ $# -eq 2 ]; then
+    # Two arguments: first is directory, second is task
+    if [ -z "$1" ]; then
+        echo "Error: Project directory cannot be empty"
+        echo ""
+        show_usage
+        exit 1
+    fi
+    if [ -z "$2" ]; then
+        echo "Error: Initial task cannot be empty"
+        echo ""
+        show_usage
+        exit 1
+    fi
+    if [ ! -d "$1" ]; then
+        echo "Error: Directory '$1' does not exist"
+        exit 1
+    fi
+    REPO_DIR="$(cd "$1" && pwd)"  # Get absolute path
+    INITIAL_TASK="$2"
+else
+    echo "Error: Too many arguments provided"
+    echo ""
+    show_usage
+    exit 1
+fi
 SESSION_ID=$(uuidgen 2>/dev/null || echo "session-$$-$(date +%s)")
 HANDOFF_DIR="/workspace/plan/handoffs"
 STATUS_FILE="$HANDOFF_DIR/workflow_status.txt"
@@ -18,6 +96,9 @@ log_with_timestamp() {
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo "[$timestamp] $message" | tee -a "$LOG_FILE"
 }
+
+# Ensure plan directory structure exists
+mkdir -p "/workspace/plan"
 
 # Create fresh handoff directory (cleanup previous runs)
 if [ -d "$HANDOFF_DIR" ]; then
@@ -47,6 +128,33 @@ update_workflow_status() {
     fi
     
     log_with_timestamp "Status updated: $status ${current_stage:+- Stage: $current_stage} ${details:+- $details}"
+}
+
+# Simple retry mechanism for Claude operations
+retry_claude_operation() {
+    local operation_description="$1"
+    local operation_command="$2"
+    local max_retries=1  # One retry as requested
+    
+    for attempt in 1 2; do
+        log_with_timestamp "🔄 $operation_description (attempt $attempt)"
+        
+        if eval "$operation_command"; then
+            if [ $attempt -eq 2 ]; then
+                log_with_timestamp "✅ $operation_description succeeded on retry"
+            fi
+            return 0  # Success
+        else
+            local exit_code=$?
+            if [ $attempt -le $max_retries ]; then
+                log_with_timestamp "⚠️  $operation_description failed (attempt $attempt), retrying in 5 seconds..."
+                sleep 5
+            else
+                log_with_timestamp "❌ $operation_description failed after $max_retries retry (exit code: $exit_code)"
+                return $exit_code
+            fi
+        fi
+    done
 }
 
 log_with_timestamp "=================================="
@@ -226,10 +334,10 @@ $context"
 $full_prompt
 EOF"
     
-    # Run the stage
+    # Run the stage with retry mechanism
     log_with_timestamp "⚡ Claude is processing stage $stage_name..."
     local claude_start_time=$(date +%s)
-    docker exec "$CONTAINER_NAME" bash -c "cd /workspace && cat /tmp/stage_prompt.txt | claude --dangerously-skip-permissions"
+    retry_claude_operation "Claude stage execution for $stage_name" "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/stage_prompt.txt | claude --dangerously-skip-permissions'"
     local stage_exit_code=$?
     local claude_end_time=$(date +%s)
     local claude_duration=$((claude_end_time - claude_start_time))
@@ -250,11 +358,11 @@ EOF"
 $handoff_prompt
 EOF"
     
-    # Capture handoff summary
+    # Capture handoff summary with retry mechanism
     local handoff_file="$HANDOFF_DIR/stage_${stage_num}_handoff.txt"
     local handoff_start_time=$(date +%s)
     log_with_timestamp "🔄 Requesting handoff summary from Claude..."
-    docker exec "$CONTAINER_NAME" bash -c "cd /workspace && cat /tmp/handoff_prompt.txt | claude --dangerously-skip-permissions" > "$handoff_file"
+    retry_claude_operation "Claude handoff generation for $stage_name" "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/handoff_prompt.txt | claude --dangerously-skip-permissions' > '$handoff_file'"
     local handoff_end_time=$(date +%s)
     local handoff_duration=$((handoff_end_time - handoff_start_time))
     
@@ -306,8 +414,10 @@ echo "$INITIAL_TASK" > "$HANDOFF_DIR/initial_task.txt"
 task_words=$(echo "$INITIAL_TASK" | wc -w)
 log_with_timestamp "📝 Initial task: $task_words words"
 
-# Container setup
-CONTAINER_NAME="claude_handoff_$(basename "$REPO_DIR")_$$"
+# Container setup with unique naming for multi-project support
+PROJECT_NAME=$(basename "$REPO_DIR")
+UNIQUE_ID="$(date +%s)_$(hostname)_$$"
+CONTAINER_NAME="claude_handoff_${PROJECT_NAME}_${UNIQUE_ID}"
 log_with_timestamp "🐳 Container name: $CONTAINER_NAME"
 
 cleanup() {
