@@ -36,6 +36,31 @@ echo "Using system-wide Claude authentication from Mac"
 echo "Project directory: $REPO_DIR"
 echo "Authentication: ~/.claude -> /home/dev/.claude (system-wide)"
 echo "Container will have access to repo directory only"
+
+# Detect host timezone (macOS)
+HOST_TZ=""
+if [ -f "/etc/localtime" ]; then
+    # Try to read the timezone from the localtime symlink
+    HOST_TZ=$(readlink /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||')
+fi
+
+# If that didn't work, try alternative methods
+if [ -z "$HOST_TZ" ]; then
+    # Try systemsetup (macOS specific)
+    HOST_TZ=$(systemsetup -gettimezone 2>/dev/null | awk -F': ' '{print $2}')
+fi
+
+# If still no timezone, try date command
+if [ -z "$HOST_TZ" ]; then
+    HOST_TZ=$(date +%Z 2>/dev/null)
+fi
+
+if [ -n "$HOST_TZ" ]; then
+    echo "Host timezone detected: $HOST_TZ"
+else
+    echo "Warning: Could not detect host timezone, container will use UTC"
+fi
+
 echo ""
 
 # Source shared settings library
@@ -69,6 +94,7 @@ docker run -d \
     --env DISABLE_AUTOUPDATER=1 \
     --env CLAUDE_CODE_ENABLE_TELEMETRY=0 \
     --env CLAUDE_WORKING_DIRECTORIES="/workspace:/workspace/..:/:/home:/etc:/usr:/var:/tmp:/root" \
+    ${HOST_TZ:+--env TZ="$HOST_TZ"} \
     claude_code_container tail -f /dev/null
 
 # Now exec into the container interactively

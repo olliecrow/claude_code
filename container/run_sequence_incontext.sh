@@ -47,6 +47,24 @@ else
     HAS_SETTINGS_LIB=false
 fi
 
+# Detect host timezone (macOS)
+HOST_TZ=""
+if [ -f "/etc/localtime" ]; then
+    # Try to read the timezone from the localtime symlink
+    HOST_TZ=$(readlink /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||')
+fi
+
+# If that didn't work, try alternative methods
+if [ -z "$HOST_TZ" ]; then
+    # Try systemsetup (macOS specific)
+    HOST_TZ=$(systemsetup -gettimezone 2>/dev/null | awk -F': ' '{print $2}')
+fi
+
+# If still no timezone, try date command
+if [ -z "$HOST_TZ" ]; then
+    HOST_TZ=$(date +%Z 2>/dev/null)
+fi
+
 # Generate a session ID for tracking (even though we use -c for continuation)
 SESSION_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "session-$$-$(date +%s)")
 
@@ -56,6 +74,9 @@ echo "=================================="
 echo "Project: $REPO_DIR"
 echo "Initial task: $INITIAL_TASK"
 echo "Session ID: $SESSION_ID (for tracking)"
+if [ -n "$HOST_TZ" ]; then
+    echo "Host timezone: $HOST_TZ"
+fi
 echo "Starting container..."
 echo ""
 
@@ -98,6 +119,7 @@ docker run -d \
     --env DISABLE_AUTOUPDATER=1 \
     --env CLAUDE_CODE_ENABLE_TELEMETRY=0 \
     --env CLAUDE_WORKING_DIRECTORIES="/workspace:/workspace/..:/:/home:/etc:/usr:/var:/tmp:/root" \
+    ${HOST_TZ:+--env TZ="$HOST_TZ"} \
     --env CLAUDE_SESSION_ID="$SESSION_ID" \
     claude_code_container tail -f /dev/null > /dev/null 2>&1
 
