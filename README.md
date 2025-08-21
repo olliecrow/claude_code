@@ -25,7 +25,7 @@ Realtime: https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor
 
 ```
 alias ccc="{path_to_repo}/container/run.sh"
-alias ccs="{path_to_repo}/container/run_sequence.sh"
+alias ccs="{path_to_repo}/container/run_sequence_handoff.sh"
 alias ccu="npx --yes ccusage@latest"
 alias ccm="claude-monitor"
 ```
