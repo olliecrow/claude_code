@@ -197,26 +197,26 @@ log_with_timestamp ""
 update_workflow_status "STARTING" "" "Initializing workflow components"
 
 # PRODUCTION STAGES
-# STAGES=(
-#     "investigate"
-#     "plan"
-#     "plan" 
-#     "execute"
-#     "execute"
-#     "execute"
-#     "execute"
-#     "verify"
-#     "verify"
-#     "cleanup"
-#     "summary"
-# )
-
-# DEBUG STAGES
 STAGES=(
-    "test_joke"
-    "test_joke"
-    "test_joke"
+    "investigate"
+    "plan"
+    "plan" 
+    "execute"
+    "execute"
+    "execute"
+    "execute"
+    "verify"
+    "verify"
+    "cleanup"
+    "summary"
 )
+
+# # DEBUG STAGES
+# STAGES=(
+#     "test_joke"
+#     "test_joke"
+#     "test_joke"
+# )
 
 # Rolling handoff prompt - consolidates all prior work into current summary
 generate_handoff_prompt() {
@@ -333,20 +333,20 @@ get_stage_prompt() {
     local iteration=$(get_stage_iteration "$stage_name" "$stage_num")
     
     # PRODUCTION STAGES
-    # case "$stage_name" in
-    #     "investigate") echo "/plan conduct deep and thorough investigations, research, testing, debugging, etc on the task at hand. do not plan/execute yet, just investigate/research. $PLAN_SUFFIX" ;;
-    #     "plan") echo "/plan create / continue to flesh out the plan. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. This is plan iteration $iteration. $PLAN_SUFFIX" ;;
-    #     "compact") echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
-    #     "execute") echo "/plan execute the plan. if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. This is execute iteration $iteration. $PLAN_SUFFIX" ;;
-    #     "verify") echo "/plan verify that all tasks in the plan are complete, through whatever means and methods required to verify and validate. This is verify iteration $iteration. $PLAN_SUFFIX" ;;
-    #     "cleanup") echo "/plan conduct a deep and thorough cleanup of the project. remove all files and directories that are no longer needed." ;;
-    #     "summary") echo "/plan summarize this conversation so far. output the summary here (not into a file)." ;;
-    # esac
-
-    # DEBUG STAGES
     case "$stage_name" in
-        "test_joke") echo "/joke Create a test file called debug_test.txt with the session ID in it. Output all jokes so far in your context into a file unique to this stage.txt" ;;
+        "investigate") echo "/plan conduct deep and thorough investigations, research, testing, debugging, etc on the task at hand. do not plan/execute yet, just investigate/research. $PLAN_SUFFIX" ;;
+        "plan") echo "/plan create / continue to flesh out the plan. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. This is plan iteration $iteration. $PLAN_SUFFIX" ;;
+        "compact") echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
+        "execute") echo "/plan execute the plan. if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. This is execute iteration $iteration. $PLAN_SUFFIX" ;;
+        "verify") echo "/plan verify that all tasks in the plan are complete, through whatever means and methods required to verify and validate. This is verify iteration $iteration. $PLAN_SUFFIX" ;;
+        "cleanup") echo "/plan conduct a deep and thorough cleanup of the project. remove all files and directories that are no longer needed." ;;
+        "summary") echo "/plan summarize this conversation so far. output the summary here (not into a file)." ;;
     esac
+
+    # # DEBUG STAGES
+    # case "$stage_name" in
+    #     "test_joke") echo "/joke Create a test file called debug_test.txt with the session ID in it. Output all jokes so far in your context into a file unique to this stage.txt" ;;
+    # esac
 }
 
 # Execute a single stage with handoff
