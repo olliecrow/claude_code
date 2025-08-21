@@ -15,6 +15,11 @@ Useful items for better usage of Claude Code.
 - double tap `Esc` to jump back in chat.
 - use `#` to add to memory without committing to repo.
 
+## Monitor Usage
+
+Historical: https://github.com/ryoppippi/ccusage
+
+Realtime: https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor
 
 ## Directories
 
