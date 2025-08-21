@@ -196,6 +196,7 @@ log_with_timestamp ""
 
 update_workflow_status "STARTING" "" "Initializing workflow components"
 
+# PRODUCTION STAGES
 # STAGES=(
 #     "investigate"
 #     "plan"
@@ -210,6 +211,7 @@ update_workflow_status "STARTING" "" "Initializing workflow components"
 #     "summary"
 # )
 
+# DEBUG STAGES
 STAGES=(
     "test_joke"
     "test_joke"
@@ -330,6 +332,7 @@ get_stage_prompt() {
     local stage_num="$2"
     local iteration=$(get_stage_iteration "$stage_name" "$stage_num")
     
+    # PRODUCTION STAGES
     # case "$stage_name" in
     #     "investigate") echo "/plan conduct deep and thorough investigations, research, testing, debugging, etc on the task at hand. do not plan/execute yet, just investigate/research. $PLAN_SUFFIX" ;;
     #     "plan") echo "/plan create / continue to flesh out the plan. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. This is plan iteration $iteration. $PLAN_SUFFIX" ;;
@@ -339,6 +342,8 @@ get_stage_prompt() {
     #     "cleanup") echo "/plan conduct a deep and thorough cleanup of the project. remove all files and directories that are no longer needed." ;;
     #     "summary") echo "/plan summarize this conversation so far. output the summary here (not into a file)." ;;
     # esac
+
+    # DEBUG STAGES
     case "$stage_name" in
         "test_joke") echo "/joke Create a test file called debug_test.txt with the session ID in it. Output all jokes so far in your context into a file unique to this stage.txt" ;;
     esac
