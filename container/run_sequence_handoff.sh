@@ -87,6 +87,24 @@ else
 fi
 SESSION_ID=$(uuidgen 2>/dev/null || echo "session-$$-$(date +%s)")
 
+# Detect host timezone (macOS)
+HOST_TZ=""
+if [ -f "/etc/localtime" ]; then
+    # Try to read the timezone from the localtime symlink
+    HOST_TZ=$(readlink /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||')
+fi
+
+# If that didn't work, try alternative methods
+if [ -z "$HOST_TZ" ]; then
+    # Try systemsetup (macOS specific)
+    HOST_TZ=$(systemsetup -gettimezone 2>/dev/null | awk -F': ' '{print $2}')
+fi
+
+# If still no timezone, try date command
+if [ -z "$HOST_TZ" ]; then
+    HOST_TZ=$(date +%Z 2>/dev/null)
+fi
+
 # Host-side paths (for file operations on host)
 HOST_PLAN_DIR="$REPO_DIR/plan"
 HOST_HANDOFF_DIR="$HOST_PLAN_DIR/handoffs"
@@ -168,6 +186,9 @@ log_with_timestamp "Claude Code Handoff Workflow STARTED"
 log_with_timestamp "=================================="
 log_with_timestamp "Project: $REPO_DIR"
 log_with_timestamp "Session ID: $SESSION_ID"
+if [ -n "$HOST_TZ" ]; then
+    log_with_timestamp "Host timezone: $HOST_TZ"
+fi
 log_with_timestamp "Handoff Dir: $HOST_HANDOFF_DIR"
 log_with_timestamp "Status File: $STATUS_FILE"
 log_with_timestamp "Log File: $LOG_FILE"
@@ -490,6 +511,7 @@ docker run -d --name "$CONTAINER_NAME" \
     --env CLAUDE_CONFIG_DIR=/home/dev/.claude \
     --env CLAUDE_CODE_BYPASS_ALL_PERMISSIONS=1 \
     --env CLAUDE_CODE_SUPPRESS_UI_PROMPTS=1 \
+    ${HOST_TZ:+--env TZ="$HOST_TZ"} \
     claude_code_container tail -f /dev/null > /dev/null 2>&1
 
 sleep 2
