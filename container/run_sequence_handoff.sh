@@ -216,7 +216,7 @@ Include:
 - Original task and requirements
 - All work completed across ALL stages so far
 - All project files created, modified, or deleted (all stages)
-- All plan/markdown files created, modified, or deleted (all stages)
+- All plan/markdown/txt/etc files created, modified, or deleted (all stages)
 - All critical decisions made throughout workflow
 - Any blockers or issues encountered (any stage)
 - Maintain a timelines across all stages.
