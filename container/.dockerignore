@@ -1,0 +1,6 @@
+.*
+.git*
+.git/
+!pyproject.toml
+!Dockerfile
+!.dockerignore

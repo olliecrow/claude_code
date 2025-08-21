@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = []
+
+[project]
+name = "claude-code-container"
+version = "0.1.0"
+description = "Isolated Docker container for running Claude Code securely"
+requires-python = ">=3.10"
+dependencies = [
+    "dotenv>=0.9.9",
+    "fastapi>=0.115.14",
+    "ipykernel>=6.29.5",
+    "ipywidgets>=8.0.0",
+    "jupyter>=1.0.0",
+    "jupyterlab>=4.0.0",
+    "line-profiler>=4.2.0",
+    "matplotlib>=3.10.3",
+    "maturin>=1.7.6",
+    "memory-profiler>=0.61.0",
+    "numpy>=2.2.6",
+    "pandas>=2.2.3",
+    "plotly>=5.0.0",
+    "pydantic>=2.11.5",
+    "pytest>=8.3.5",
+    "requests>=2.32.4",
+    "seaborn>=0.12.0",
+    "uvicorn>=0.34.3",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15.0",
+]
+
+[tool.ruff]
+line-length = 120
+
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_any_generics = true
+check_untyped_defs = true
+no_implicit_reexport = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
