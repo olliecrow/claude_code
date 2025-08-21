@@ -86,9 +86,18 @@ else
     exit 1
 fi
 SESSION_ID=$(uuidgen 2>/dev/null || echo "session-$$-$(date +%s)")
-HANDOFF_DIR="/workspace/plan/handoffs"
-STATUS_FILE="$HANDOFF_DIR/workflow_status.txt"
-LOG_FILE="$HANDOFF_DIR/workflow_log.txt"
+
+# Host-side paths (for file operations on host)
+HOST_PLAN_DIR="$REPO_DIR/plan"
+HOST_HANDOFF_DIR="$HOST_PLAN_DIR/handoffs"
+
+# Container-side paths (for referencing inside container)
+CONTAINER_HANDOFF_DIR="/workspace/plan/handoffs"
+STATUS_FILE="$HOST_HANDOFF_DIR/workflow_status.txt"
+LOG_FILE="$HOST_HANDOFF_DIR/workflow_log.txt"
+
+# Create plan directory structure on host (will be mounted as /workspace/plan in container)
+mkdir -p "$HOST_PLAN_DIR"
 
 # Logging function with timestamps
 log_with_timestamp() {
@@ -97,21 +106,18 @@ log_with_timestamp() {
     echo "[$timestamp] $message" | tee -a "$LOG_FILE"
 }
 
-# Ensure plan directory structure exists
-mkdir -p "/workspace/plan"
-
 # Create fresh handoff directory (cleanup previous runs)
-if [ -d "$HANDOFF_DIR" ]; then
+if [ -d "$HOST_HANDOFF_DIR" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🧹 Cleaning up previous handoff directory..."
-    rm -rf "$HANDOFF_DIR"/*
+    rm -rf "$HOST_HANDOFF_DIR"/*
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Previous handoffs cleared"
 fi
-mkdir -p "$HANDOFF_DIR"
+mkdir -p "$HOST_HANDOFF_DIR"
 
 # Initialize tracking files
 echo "Workflow started at $(date)" > "$LOG_FILE"
 echo "WORKFLOW_STATUS=INITIALIZING" > "$STATUS_FILE"
-log_with_timestamp "📁 Fresh handoff directory created: $HANDOFF_DIR"
+log_with_timestamp "📁 Fresh handoff directory created: $HOST_HANDOFF_DIR"
 
 # Update workflow status
 update_workflow_status() {
@@ -162,25 +168,31 @@ log_with_timestamp "Claude Code Handoff Workflow STARTED"
 log_with_timestamp "=================================="
 log_with_timestamp "Project: $REPO_DIR"
 log_with_timestamp "Session ID: $SESSION_ID"
-log_with_timestamp "Handoff Dir: $HANDOFF_DIR"
+log_with_timestamp "Handoff Dir: $HOST_HANDOFF_DIR"
 log_with_timestamp "Status File: $STATUS_FILE"
 log_with_timestamp "Log File: $LOG_FILE"
 log_with_timestamp ""
 
 update_workflow_status "STARTING" "" "Initializing workflow components"
 
+# STAGES=(
+#     "investigate"
+#     "plan"
+#     "plan" 
+#     "execute"
+#     "execute"
+#     "execute"
+#     "execute"
+#     "verify"
+#     "verify"
+#     "cleanup"
+#     "summary"
+# )
+
 STAGES=(
-    "investigate"
-    "plan"
-    "plan" 
-    "execute"
-    "execute"
-    "execute"
-    "execute"
-    "verify"
-    "verify"
-    "cleanup"
-    "summary"
+    "test_joke"
+    "test_joke"
+    "test_joke"
 )
 
 # Structured handoff prompt - captures essential context
@@ -228,16 +240,16 @@ build_context_from_handoffs() {
     local context=""
     
     # Add initial task context
-    if [ -f "$HANDOFF_DIR/initial_task.txt" ]; then
+    if [ -f "$HOST_HANDOFF_DIR/initial_task.txt" ]; then
         context="## Original Task
-$(cat "$HANDOFF_DIR/initial_task.txt")
+$(cat "$HOST_HANDOFF_DIR/initial_task.txt")
 
 "
     fi
     
     # Add summaries from all previous stages
     for ((i=1; i<current_stage_num; i++)); do
-        local handoff_file="$HANDOFF_DIR/stage_${i}_handoff.txt"
+        local handoff_file="$HOST_HANDOFF_DIR/stage_${i}_handoff.txt"
         if [ -f "$handoff_file" ]; then
             context="${context}## Previous Stage $i Summary
 $(cat "$handoff_file")
@@ -276,14 +288,17 @@ get_stage_prompt() {
     local stage_num="$2"
     local iteration=$(get_stage_iteration "$stage_name" "$stage_num")
     
+    # case "$stage_name" in
+    #     "investigate") echo "/plan conduct deep and thorough investigations, research, testing, debugging, etc on the task at hand. do not plan/execute yet, just investigate/research. $PLAN_SUFFIX" ;;
+    #     "plan") echo "/plan create / continue to flesh out the plan. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. This is plan iteration $iteration. $PLAN_SUFFIX" ;;
+    #     "compact") echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
+    #     "execute") echo "/plan execute the plan. if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. This is execute iteration $iteration. $PLAN_SUFFIX" ;;
+    #     "verify") echo "/plan verify that all tasks in the plan are complete, through whatever means and methods required to verify and validate. This is verify iteration $iteration. $PLAN_SUFFIX" ;;
+    #     "cleanup") echo "/plan conduct a deep and thorough cleanup of the project. remove all files and directories that are no longer needed." ;;
+    #     "summary") echo "/plan summarize this conversation so far. output the summary here (not into a file)." ;;
+    # esac
     case "$stage_name" in
-        "investigate") echo "/plan conduct deep and thorough investigations, research, testing, debugging, etc on the task at hand. do not plan/execute yet, just investigate/research. $PLAN_SUFFIX" ;;
-        "plan") echo "/plan create / continue to flesh out the plan. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. This is plan iteration $iteration. $PLAN_SUFFIX" ;;
-        "compact") echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
-        "execute") echo "/plan execute the plan. if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. This is execute iteration $iteration. $PLAN_SUFFIX" ;;
-        "verify") echo "/plan verify that all tasks in the plan are complete, through whatever means and methods required to verify and validate. This is verify iteration $iteration. $PLAN_SUFFIX" ;;
-        "cleanup") echo "/plan conduct a deep and thorough cleanup of the project. remove all files and directories that are no longer needed." ;;
-        "summary") echo "/plan summarize this conversation so far. output the summary here (not into a file)." ;;
+        "test_joke") echo "/joke Create a test file called debug_test.txt with the session ID in it. Output all jokes so far in your context into a file unique to this stage.txt" ;;
     esac
 }
 
@@ -321,7 +336,7 @@ $context"
     log_with_timestamp "📄 Full prompt created: $prompt_length total words"
     
     # Save prompt to file for debugging
-    local prompt_file="$HANDOFF_DIR/stage_${stage_num}_prompt.txt"
+    local prompt_file="$HOST_HANDOFF_DIR/stage_${stage_num}_prompt.txt"
     echo "$full_prompt" > "$prompt_file"
     log_with_timestamp "💾 Prompt saved to: $prompt_file"
     
@@ -359,7 +374,7 @@ $handoff_prompt
 EOF"
     
     # Capture handoff summary with retry mechanism
-    local handoff_file="$HANDOFF_DIR/stage_${stage_num}_handoff.txt"
+    local handoff_file="$HOST_HANDOFF_DIR/stage_${stage_num}_handoff.txt"
     local handoff_start_time=$(date +%s)
     log_with_timestamp "🔄 Requesting handoff summary from Claude..."
     retry_claude_operation "Claude handoff generation for $stage_name" "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/handoff_prompt.txt | claude --dangerously-skip-permissions' > '$handoff_file'"
@@ -382,7 +397,7 @@ EOF"
     update_workflow_status "STAGE_COMPLETED" "$stage_name" "Completed in ${total_stage_duration}s"
     
     # Create stage summary file
-    local stage_summary_file="$HANDOFF_DIR/stage_${stage_num}_summary.txt"
+    local stage_summary_file="$HOST_HANDOFF_DIR/stage_${stage_num}_summary.txt"
     cat > "$stage_summary_file" << EOF
 STAGE SUMMARY: $stage_name (Stage $stage_num/$total_stages)
 ========================================================
@@ -409,8 +424,8 @@ EOF
 }
 
 # Save initial task
-log_with_timestamp "💾 Saving initial task to: $HANDOFF_DIR/initial_task.txt"
-echo "$INITIAL_TASK" > "$HANDOFF_DIR/initial_task.txt"
+log_with_timestamp "💾 Saving initial task to: $HOST_HANDOFF_DIR/initial_task.txt"
+echo "$INITIAL_TASK" > "$HOST_HANDOFF_DIR/initial_task.txt"
 task_words=$(echo "$INITIAL_TASK" | wc -w)
 log_with_timestamp "📝 Initial task: $task_words words"
 
@@ -427,19 +442,19 @@ cleanup() {
     
     # Create final workflow summary
     local workflow_end_time=$(date)
-    cat >> "$HANDOFF_DIR/workflow_final_summary.txt" << EOF
+    cat >> "$HOST_HANDOFF_DIR/workflow_final_summary.txt" << EOF
 WORKFLOW COMPLETED: $workflow_end_time
 ==========================================
 Session ID: $SESSION_ID
 Project: $REPO_DIR
 Total Stages: ${#STAGES[@]}
 Container: $CONTAINER_NAME
-Handoff Directory: $HANDOFF_DIR
+Handoff Directory: $HOST_HANDOFF_DIR
 
 All files in handoff directory:
-$(ls -la "$HANDOFF_DIR" 2>/dev/null | grep -v "^total")
+$(ls -la "$HOST_HANDOFF_DIR" 2>/dev/null | grep -v "^total")
 EOF
-    log_with_timestamp "📋 Final workflow summary saved to: $HANDOFF_DIR/workflow_final_summary.txt"
+    log_with_timestamp "📋 Final workflow summary saved to: $HOST_HANDOFF_DIR/workflow_final_summary.txt"
 }
 
 trap cleanup EXIT
@@ -492,7 +507,7 @@ log_with_timestamp "🎉 =================================="
 log_with_timestamp "🎉 HANDOFF WORKFLOW COMPLETE!"
 log_with_timestamp "🎉 =================================="
 log_with_timestamp "📊 Total execution time: ${WORKFLOW_DURATION_MINUTES}m ${WORKFLOW_DURATION_SECONDS}s"
-log_with_timestamp "📁 All handoff summaries saved in: $HANDOFF_DIR"
+log_with_timestamp "📁 All handoff summaries saved in: $HOST_HANDOFF_DIR"
 log_with_timestamp "🆔 Session ID: $SESSION_ID"
 log_with_timestamp "📋 Check workflow_status.txt for current status"
 log_with_timestamp "📜 Check workflow_log.txt for detailed logs"
@@ -502,7 +517,7 @@ update_workflow_status "WORKFLOW_COMPLETED" "" "All ${TOTAL_STAGES} stages compl
 # List all generated files for easy reference
 log_with_timestamp ""
 log_with_timestamp "📂 FILES GENERATED:"
-ls -la "$HANDOFF_DIR" | while read line; do
+ls -la "$HOST_HANDOFF_DIR" | while read line; do
     if [[ "$line" != "total "* ]]; then
         log_with_timestamp "   $line"
     fi
