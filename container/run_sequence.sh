@@ -189,6 +189,13 @@ Task: $INITIAL_TASK"
     # Execute the command inside the container (no timeout)
     echo "Executing stage..."
     
+    # Display the exact prompt being sent to Claude
+    echo ""
+    echo "--- PROMPT BEING SENT TO CLAUDE ---"
+    echo "$full_prompt"
+    echo "--- END OF PROMPT ---"
+    echo ""
+    
     # Use a temporary file inside the container for the prompt to avoid escaping issues
     docker exec "$CONTAINER_NAME" bash -c "cat > /tmp/prompt_$stage_name.txt << 'EOF'
 $full_prompt
