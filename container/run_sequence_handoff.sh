@@ -387,9 +387,13 @@ $context"
     
     # Execute stage (NEW conversation each time - no -c flag)
     log_with_timestamp "📤 Sending prompt to Claude container..."
+    local prompt_send_start=$(date +%s)
     docker exec "$CONTAINER_NAME" bash -c "cat > /tmp/stage_prompt.txt << 'EOF'
 $full_prompt
 EOF"
+    local prompt_send_end=$(date +%s)
+    local prompt_send_duration=$((prompt_send_end - prompt_send_start))
+    log_with_timestamp "⏱️  Prompt transfer took ${prompt_send_duration}s"
     
     # Run the stage with retry mechanism
     log_with_timestamp "⚡ Claude is processing stage $stage_name..."
@@ -411,14 +415,21 @@ EOF"
     update_workflow_status "GENERATING_HANDOFF" "$stage_name" "Creating handoff summary"
     
     local handoff_prompt=$(generate_handoff_prompt "$stage_name" "$stage_num")
+    
+    # Time the handoff prompt send
+    local handoff_prompt_start=$(date +%s)
     docker exec "$CONTAINER_NAME" bash -c "cat > /tmp/handoff_prompt.txt << 'EOF'
 $handoff_prompt
 EOF"
+    local handoff_prompt_end=$(date +%s)
+    local handoff_prompt_duration=$((handoff_prompt_end - handoff_prompt_start))
+    log_with_timestamp "⏱️  Handoff prompt transfer took ${handoff_prompt_duration}s"
     
     # Capture handoff summary with retry mechanism
     local handoff_file="$HOST_HANDOFF_DIR/stage_${stage_num}_handoff.txt"
     local handoff_start_time=$(date +%s)
     log_with_timestamp "🔄 Requesting handoff summary from Claude..."
+    
     retry_claude_operation "Claude handoff generation for $stage_name" "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/handoff_prompt.txt | claude --dangerously-skip-permissions' > '$handoff_file'"
     local handoff_end_time=$(date +%s)
     local handoff_duration=$((handoff_end_time - handoff_start_time))
@@ -445,15 +456,32 @@ STAGE SUMMARY: $stage_name (Stage $stage_num/$total_stages)
 ========================================================
 Start Time: $(date -r $stage_start_time)
 End Time: $(date -r $stage_end_time)
-Duration: ${total_stage_duration}s
+Total Duration: ${total_stage_duration}s
+
+TIMING BREAKDOWN:
+-----------------
+Context Building: $((prompt_send_start - stage_start_time))s
+Prompt Transfer: ${prompt_send_duration}s
 Claude Execution: ${claude_duration}s
+Handoff Prompt Transfer: ${handoff_prompt_duration}s
 Handoff Generation: ${handoff_duration}s
-Exit Code: $stage_exit_code
+Cleanup/Other: $((stage_end_time - handoff_end_time))s
+
+PERFORMANCE METRICS:
+--------------------
+Words per second (Claude): $([ $claude_duration -gt 0 ] && echo "scale=2; $prompt_length / $claude_duration" | bc || echo "N/A")
+Words per second (Handoff): $([ $handoff_duration -gt 0 ] && echo "scale=2; $handoff_words / $handoff_duration" | bc || echo "N/A")
+
+DATA SIZES:
+-----------
 Prompt Length: $prompt_length words
 Context Length: $context_length words
 Handoff Length: $handoff_words words
+Exit Code: $stage_exit_code
 Status: $([ $stage_exit_code -eq 0 ] && echo "SUCCESS" || echo "ERROR")
-Files Created:
+
+FILES:
+------
 - $prompt_file
 - $handoff_file
 - $stage_summary_file
@@ -504,6 +532,7 @@ trap cleanup EXIT
 log_with_timestamp "🐳 Starting Claude Code container..."
 update_workflow_status "CONTAINER_STARTING" "" "Starting Docker container"
 
+CONTAINER_START_TIME=$(date +%s)
 docker run -d --name "$CONTAINER_NAME" \
     --mount type=bind,source="$REPO_DIR",target=/workspace \
     --mount type=bind,source="$HOME/.claude",target=/home/dev/.claude \
@@ -515,7 +544,9 @@ docker run -d --name "$CONTAINER_NAME" \
     claude_code_container tail -f /dev/null > /dev/null 2>&1
 
 sleep 2
-log_with_timestamp "✅ Container started successfully"
+CONTAINER_END_TIME=$(date +%s)
+CONTAINER_STARTUP_DURATION=$((CONTAINER_END_TIME - CONTAINER_START_TIME))
+log_with_timestamp "✅ Container started successfully in ${CONTAINER_STARTUP_DURATION}s"
 update_workflow_status "CONTAINER_READY" "" "Container ready for stages"
 
 # Execute all stages
@@ -556,6 +587,33 @@ log_with_timestamp "📋 Check workflow_status.txt for current status"
 log_with_timestamp "📜 Check workflow_log.txt for detailed logs"
 
 update_workflow_status "WORKFLOW_COMPLETED" "" "All ${TOTAL_STAGES} stages completed in ${WORKFLOW_DURATION_MINUTES}m ${WORKFLOW_DURATION_SECONDS}s"
+
+# Create performance analysis file
+PERFORMANCE_FILE="$HOST_HANDOFF_DIR/performance_analysis.txt"
+cat > "$PERFORMANCE_FILE" << EOF
+WORKFLOW PERFORMANCE ANALYSIS
+==============================
+Session ID: $SESSION_ID
+Total Stages: $TOTAL_STAGES
+Total Duration: ${WORKFLOW_DURATION_MINUTES}m ${WORKFLOW_DURATION_SECONDS}s
+Container Startup: ${CONTAINER_STARTUP_DURATION}s
+
+STAGE PERFORMANCE SUMMARY:
+--------------------------
+EOF
+
+# Append stage timing data
+for i in "${!STAGES[@]}"; do
+    STAGE_NUM=$((i + 1))
+    SUMMARY_FILE="$HOST_HANDOFF_DIR/stage_${STAGE_NUM}_summary.txt"
+    if [ -f "$SUMMARY_FILE" ]; then
+        echo "" >> "$PERFORMANCE_FILE"
+        echo "Stage $STAGE_NUM (${STAGES[$i]}):" >> "$PERFORMANCE_FILE"
+        grep -A 6 "TIMING BREAKDOWN" "$SUMMARY_FILE" | tail -n 6 >> "$PERFORMANCE_FILE" || true
+    fi
+done
+
+log_with_timestamp "📊 Performance analysis saved to: $PERFORMANCE_FILE"
 
 # List all generated files for easy reference
 log_with_timestamp ""
