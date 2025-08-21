@@ -9,16 +9,57 @@ REPO_DIR="$1"
 INITIAL_TASK="${2:-}"
 SESSION_ID=$(uuidgen 2>/dev/null || echo "session-$$-$(date +%s)")
 HANDOFF_DIR="/workspace/plan/handoffs"
+STATUS_FILE="$HANDOFF_DIR/workflow_status.txt"
+LOG_FILE="$HANDOFF_DIR/workflow_log.txt"
 
-# Create handoff directory
+# Logging function with timestamps
+log_with_timestamp() {
+    local message="$1"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] $message" | tee -a "$LOG_FILE"
+}
+
+# Create fresh handoff directory (cleanup previous runs)
+if [ -d "$HANDOFF_DIR" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🧹 Cleaning up previous handoff directory..."
+    rm -rf "$HANDOFF_DIR"/*
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Previous handoffs cleared"
+fi
 mkdir -p "$HANDOFF_DIR"
 
-echo "=================================="
-echo "Claude Code Handoff Workflow"
-echo "=================================="
-echo "Project: $REPO_DIR"
-echo "Session ID: $SESSION_ID"
-echo "Handoff Dir: $HANDOFF_DIR"
+# Initialize tracking files
+echo "Workflow started at $(date)" > "$LOG_FILE"
+echo "WORKFLOW_STATUS=INITIALIZING" > "$STATUS_FILE"
+log_with_timestamp "📁 Fresh handoff directory created: $HANDOFF_DIR"
+
+# Update workflow status
+update_workflow_status() {
+    local status="$1"
+    local current_stage="${2:-}"
+    local details="${3:-}"
+    
+    echo "WORKFLOW_STATUS=$status" > "$STATUS_FILE"
+    echo "CURRENT_STAGE=$current_stage" >> "$STATUS_FILE"
+    echo "SESSION_ID=$SESSION_ID" >> "$STATUS_FILE"
+    echo "LAST_UPDATE=$(date)" >> "$STATUS_FILE"
+    if [ -n "$details" ]; then
+        echo "DETAILS=$details" >> "$STATUS_FILE"
+    fi
+    
+    log_with_timestamp "Status updated: $status ${current_stage:+- Stage: $current_stage} ${details:+- $details}"
+}
+
+log_with_timestamp "=================================="
+log_with_timestamp "Claude Code Handoff Workflow STARTED"
+log_with_timestamp "=================================="
+log_with_timestamp "Project: $REPO_DIR"
+log_with_timestamp "Session ID: $SESSION_ID"
+log_with_timestamp "Handoff Dir: $HANDOFF_DIR"
+log_with_timestamp "Status File: $STATUS_FILE"
+log_with_timestamp "Log File: $LOG_FILE"
+log_with_timestamp ""
+
+update_workflow_status "STARTING" "" "Initializing workflow components"
 
 STAGES=(
     "investigate"
@@ -119,14 +160,23 @@ execute_stage_with_handoff() {
     local stage_name="$1"
     local stage_num="$2"
     local total_stages="$3"
+    local stage_start_time=$(date +%s)
     
-    echo "=================================="
-    echo "Stage $stage_num/$total_stages: $stage_name"
-    echo "Session: $SESSION_ID"
-    echo "=================================="
+    log_with_timestamp "=================================="
+    log_with_timestamp "STAGE $stage_num/$total_stages: $stage_name"
+    log_with_timestamp "Session: $SESSION_ID"
+    log_with_timestamp "Start time: $(date)"
+    log_with_timestamp "=================================="
     
+    update_workflow_status "STAGE_STARTING" "$stage_name" "Stage $stage_num of $total_stages"
+    
+    log_with_timestamp "🔍 Building context from previous handoffs..."
     # Build context from previous handoffs
     local context=$(build_context_from_handoffs "$stage_num")
+    local context_length=$(echo "$context" | wc -w)
+    log_with_timestamp "📝 Context built: $context_length words from previous stages"
+    
+    log_with_timestamp "🎯 Generating stage-specific prompt for: $stage_name"
     local stage_prompt=$(get_stage_prompt "$stage_name")
     
     # Create full prompt with SLASH COMMAND FIRST, then context
@@ -135,26 +185,41 @@ execute_stage_with_handoff() {
 ## Context from Previous Stages
 $context"
     
-    # Save prompt to file for debugging
-    echo "$full_prompt" > "$HANDOFF_DIR/stage_${stage_num}_prompt.txt"
+    local prompt_length=$(echo "$full_prompt" | wc -w)
+    log_with_timestamp "📄 Full prompt created: $prompt_length total words"
     
-    echo "--- EXECUTING STAGE $stage_name ---"
+    # Save prompt to file for debugging
+    local prompt_file="$HANDOFF_DIR/stage_${stage_num}_prompt.txt"
+    echo "$full_prompt" > "$prompt_file"
+    log_with_timestamp "💾 Prompt saved to: $prompt_file"
+    
+    log_with_timestamp "🚀 EXECUTING STAGE $stage_name..."
+    update_workflow_status "STAGE_EXECUTING" "$stage_name" "Claude processing stage $stage_num"
     
     # Execute stage (NEW conversation each time - no -c flag)
+    log_with_timestamp "📤 Sending prompt to Claude container..."
     docker exec "$CONTAINER_NAME" bash -c "cat > /tmp/stage_prompt.txt << 'EOF'
 $full_prompt
 EOF"
     
     # Run the stage
+    log_with_timestamp "⚡ Claude is processing stage $stage_name..."
+    local claude_start_time=$(date +%s)
     docker exec "$CONTAINER_NAME" bash -c "cd /workspace && cat /tmp/stage_prompt.txt | claude --dangerously-skip-permissions"
     local stage_exit_code=$?
+    local claude_end_time=$(date +%s)
+    local claude_duration=$((claude_end_time - claude_start_time))
     
     if [ $stage_exit_code -ne 0 ]; then
-        echo "Warning: Stage $stage_name failed with code $stage_exit_code"
+        log_with_timestamp "⚠️  WARNING: Stage $stage_name failed with exit code $stage_exit_code"
+        update_workflow_status "STAGE_ERROR" "$stage_name" "Exit code: $stage_exit_code"
+    else
+        log_with_timestamp "✅ Stage $stage_name completed successfully in ${claude_duration}s"
     fi
     
     # Generate handoff summary (separate Claude call)
-    echo "--- GENERATING HANDOFF SUMMARY ---"
+    log_with_timestamp "📋 GENERATING HANDOFF SUMMARY..."
+    update_workflow_status "GENERATING_HANDOFF" "$stage_name" "Creating handoff summary"
     
     local handoff_prompt=$(generate_handoff_prompt "$stage_name")
     docker exec "$CONTAINER_NAME" bash -c "cat > /tmp/handoff_prompt.txt << 'EOF'
@@ -162,29 +227,91 @@ $handoff_prompt
 EOF"
     
     # Capture handoff summary
-    docker exec "$CONTAINER_NAME" bash -c "cd /workspace && cat /tmp/handoff_prompt.txt | claude --dangerously-skip-permissions" > "$HANDOFF_DIR/stage_${stage_num}_handoff.txt"
+    local handoff_file="$HANDOFF_DIR/stage_${stage_num}_handoff.txt"
+    local handoff_start_time=$(date +%s)
+    log_with_timestamp "🔄 Requesting handoff summary from Claude..."
+    docker exec "$CONTAINER_NAME" bash -c "cd /workspace && cat /tmp/handoff_prompt.txt | claude --dangerously-skip-permissions" > "$handoff_file"
+    local handoff_end_time=$(date +%s)
+    local handoff_duration=$((handoff_end_time - handoff_start_time))
+    
+    # Check handoff quality
+    local handoff_words=$(wc -w < "$handoff_file" 2>/dev/null || echo "0")
+    log_with_timestamp "📊 Handoff summary: $handoff_words words, generated in ${handoff_duration}s"
+    log_with_timestamp "💾 Handoff saved to: $handoff_file"
     
     # Clean up temp files
     docker exec "$CONTAINER_NAME" rm -f "/tmp/stage_prompt.txt" "/tmp/handoff_prompt.txt"
     
-    echo "Stage $stage_name completed. Handoff saved to: $HANDOFF_DIR/stage_${stage_num}_handoff.txt"
-    echo ""
+    # Calculate total stage time
+    local stage_end_time=$(date +%s)
+    local total_stage_duration=$((stage_end_time - stage_start_time))
+    
+    log_with_timestamp "🏁 Stage $stage_name COMPLETE - Total time: ${total_stage_duration}s"
+    update_workflow_status "STAGE_COMPLETED" "$stage_name" "Completed in ${total_stage_duration}s"
+    
+    # Create stage summary file
+    local stage_summary_file="$HANDOFF_DIR/stage_${stage_num}_summary.txt"
+    cat > "$stage_summary_file" << EOF
+STAGE SUMMARY: $stage_name (Stage $stage_num/$total_stages)
+========================================================
+Start Time: $(date -d @$stage_start_time)
+End Time: $(date -d @$stage_end_time)
+Duration: ${total_stage_duration}s
+Claude Execution: ${claude_duration}s
+Handoff Generation: ${handoff_duration}s
+Exit Code: $stage_exit_code
+Prompt Length: $prompt_length words
+Context Length: $context_length words
+Handoff Length: $handoff_words words
+Status: $([ $stage_exit_code -eq 0 ] && echo "SUCCESS" || echo "ERROR")
+Files Created:
+- $prompt_file
+- $handoff_file
+- $stage_summary_file
+EOF
+    
+    log_with_timestamp "📋 Stage summary saved to: $stage_summary_file"
+    log_with_timestamp ""
     
     sleep 2
 }
 
 # Save initial task
+log_with_timestamp "💾 Saving initial task to: $HANDOFF_DIR/initial_task.txt"
 echo "$INITIAL_TASK" > "$HANDOFF_DIR/initial_task.txt"
+task_words=$(echo "$INITIAL_TASK" | wc -w)
+log_with_timestamp "📝 Initial task: $task_words words"
 
-# Container setup (same as original)
+# Container setup
 CONTAINER_NAME="claude_handoff_$(basename "$REPO_DIR")_$$"
+log_with_timestamp "🐳 Container name: $CONTAINER_NAME"
 
 cleanup() {
-    echo "Cleaning up..."
+    log_with_timestamp "🧹 Cleaning up container and finalizing logs..."
+    update_workflow_status "CLEANUP" "" "Removing container and finalizing"
     docker rm -f "$CONTAINER_NAME" > /dev/null 2>&1 || true
+    
+    # Create final workflow summary
+    local workflow_end_time=$(date)
+    cat >> "$HANDOFF_DIR/workflow_final_summary.txt" << EOF
+WORKFLOW COMPLETED: $workflow_end_time
+==========================================
+Session ID: $SESSION_ID
+Project: $REPO_DIR
+Total Stages: ${#STAGES[@]}
+Container: $CONTAINER_NAME
+Handoff Directory: $HANDOFF_DIR
+
+All files in handoff directory:
+$(ls -la "$HANDOFF_DIR" 2>/dev/null | grep -v "^total")
+EOF
+    log_with_timestamp "📋 Final workflow summary saved to: $HANDOFF_DIR/workflow_final_summary.txt"
 }
 
 trap cleanup EXIT
+
+log_with_timestamp "🐳 Starting Claude Code container..."
+update_workflow_status "CONTAINER_STARTING" "" "Starting Docker container"
 
 docker run -d --name "$CONTAINER_NAME" \
     --mount type=bind,source="$REPO_DIR",target=/workspace \
@@ -196,18 +323,53 @@ docker run -d --name "$CONTAINER_NAME" \
     claude_code_container tail -f /dev/null > /dev/null 2>&1
 
 sleep 2
+log_with_timestamp "✅ Container started successfully"
+update_workflow_status "CONTAINER_READY" "" "Container ready for stages"
 
 # Execute all stages
+log_with_timestamp "🚀 STARTING WORKFLOW EXECUTION"
+log_with_timestamp "Total stages to execute: ${#STAGES[@]}"
+log_with_timestamp "Stages: ${STAGES[*]}"
+
 TOTAL_STAGES=${#STAGES[@]}
+WORKFLOW_START_TIME=$(date +%s)
+update_workflow_status "WORKFLOW_EXECUTING" "" "Executing ${TOTAL_STAGES} stages"
+
 for i in "${!STAGES[@]}"; do
     STAGE="${STAGES[$i]}"
     STAGE_NUM=$((i + 1))
     
+    log_with_timestamp ""
+    log_with_timestamp "⏭️  Proceeding to stage $STAGE_NUM of $TOTAL_STAGES: $STAGE"
     execute_stage_with_handoff "$STAGE" "$STAGE_NUM" "$TOTAL_STAGES"
+    
+    # Show progress
+    progress_percent=$(( (STAGE_NUM * 100) / TOTAL_STAGES ))
+    log_with_timestamp "📊 Progress: $STAGE_NUM/$TOTAL_STAGES stages complete ($progress_percent%)"
 done
 
-echo "=================================="
-echo "Handoff Workflow Complete!"
-echo "=================================="
-echo "All handoff summaries saved in: $HANDOFF_DIR"
-echo "Session ID: $SESSION_ID"
+# Final workflow completion
+WORKFLOW_END_TIME=$(date +%s)
+TOTAL_WORKFLOW_DURATION=$((WORKFLOW_END_TIME - WORKFLOW_START_TIME))
+WORKFLOW_DURATION_MINUTES=$((TOTAL_WORKFLOW_DURATION / 60))
+WORKFLOW_DURATION_SECONDS=$((TOTAL_WORKFLOW_DURATION % 60))
+
+log_with_timestamp "🎉 =================================="
+log_with_timestamp "🎉 HANDOFF WORKFLOW COMPLETE!"
+log_with_timestamp "🎉 =================================="
+log_with_timestamp "📊 Total execution time: ${WORKFLOW_DURATION_MINUTES}m ${WORKFLOW_DURATION_SECONDS}s"
+log_with_timestamp "📁 All handoff summaries saved in: $HANDOFF_DIR"
+log_with_timestamp "🆔 Session ID: $SESSION_ID"
+log_with_timestamp "📋 Check workflow_status.txt for current status"
+log_with_timestamp "📜 Check workflow_log.txt for detailed logs"
+
+update_workflow_status "WORKFLOW_COMPLETED" "" "All ${TOTAL_STAGES} stages completed in ${WORKFLOW_DURATION_MINUTES}m ${WORKFLOW_DURATION_SECONDS}s"
+
+# List all generated files for easy reference
+log_with_timestamp ""
+log_with_timestamp "📂 FILES GENERATED:"
+ls -la "$HANDOFF_DIR" | while read line; do
+    if [[ "$line" != "total "* ]]; then
+        log_with_timestamp "   $line"
+    fi
+done
