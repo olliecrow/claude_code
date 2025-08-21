@@ -401,8 +401,8 @@ EOF"
     cat > "$stage_summary_file" << EOF
 STAGE SUMMARY: $stage_name (Stage $stage_num/$total_stages)
 ========================================================
-Start Time: $(date -d @$stage_start_time)
-End Time: $(date -d @$stage_end_time)
+Start Time: $(date -r $stage_start_time)
+End Time: $(date -r $stage_end_time)
 Duration: ${total_stage_duration}s
 Claude Execution: ${claude_duration}s
 Handoff Generation: ${handoff_duration}s
