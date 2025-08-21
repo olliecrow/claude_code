@@ -333,7 +333,6 @@ get_stage_prompt() {
     case "$stage_name" in
         "investigate") echo "/plan conduct deep and thorough investigations, research, testing, debugging, etc on the task at hand. do not plan/execute yet, just investigate/research. $PLAN_SUFFIX" ;;
         "plan") echo "/plan create and continue to flesh out the plan. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not start executing the plan yet, just plan. $PLAN_SUFFIX" ;;
-        "compact") echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
         "executeverify") echo "/plan figure out if there are any remaining tasks left to complete. if there is nothing left to execute and/or verify (within the plan and scope), then just return (do nothing). otherwise, execute all remaining tasks in the plan, then verify that everything has been completed correctly in accordance with the plan. if there are remaining items, lets keep going. $PLAN_SUFFIX" ;;
         "cleanup") echo "/plan conduct a deep and thorough cleanup of the project. remove all files and directories that are no longer needed." ;;
         "summary") echo "/plan summarize this conversation so far. output the summary here (not into a file)." ;;
