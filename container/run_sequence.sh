@@ -129,19 +129,19 @@ sleep 2
 # ============= PRODUCTION STAGES (COMMENTED OUT) =============
 STAGES=(
     "investigate"
-    "plan_0"
-    "plan_1"
-    "compact_0"
-    "execute_0"
-    "execute_1"
-    "compact_1"
-    "execute_2"
-    "execute_3"
-    "compact_2"
-    "execute_4"
-    "verify_0"
-    "compact_3"
-    "verify_1"
+    "plan"
+    "plan"
+    "compact"
+    "execute"
+    "execute"
+    "compact"
+    "execute"
+    "execute"
+    "compact"
+    "execute"
+    "verify"
+    "compact"
+    "verify"
     "cleanup"
     "summary"
 )
@@ -149,19 +149,10 @@ STAGES=(
 get_prompt() {
     case "$1" in
         "investigate") echo "/plan conduct deep and thorough investigations, research, testing, debugging, etc on the task at hand. do not plan/execute yet, just investigate/research. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "plan_0") echo "/plan create a detailed plan for the task at hand. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "plan_1") echo "/plan flesh out the plan. conduct further investigations if needed to fill in gaps/reduce ambiguity. do not execute yet, just plan. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "compact_0") echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
-        "execute_0") echo "/plan execute the plan (first round). execute the plan step by step. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "execute_1") echo "/plan execute the plan (second round). if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "compact_1") echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
-        "execute_2") echo "/plan execute the plan (third round). if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "execute_3") echo "/plan execute the plan (fourth round). if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "compact_2") echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
-        "execute_4") echo "/plan execute the plan (fifth round). if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "verify_0") echo "/plan verify that all tasks in the plan are complete, through whatever means and methods required to verify and validate. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "compact_3") echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
-        "verify_1") echo "/plan verify that all tasks in the plan are complete, through whatever means and methods required to verify and validate. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
+        "plan") echo "/plan create a detailed plan for the task at hand. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
+        "compact") echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
+        "execute") echo "/plan execute the plan. if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
+        "verify") echo "/plan verify that all tasks in the plan are complete, through whatever means and methods required to verify and validate. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
         "cleanup") echo "/plan conduct a deep and thorough cleanup of the project. remove all files and directories that are no longer needed." ;;
         "summary") echo "/plan summarize this conversation so far. output the summary here (not into a file)." ;;
     esac
