@@ -64,7 +64,12 @@ update_workflow_status "STARTING" "" "Initializing workflow components"
 STAGES=(
     "investigate"
     "plan"
+    "plan" 
     "execute"
+    "execute"
+    "execute"
+    "execute"
+    "verify"
     "verify"
     "cleanup"
     "summary"
@@ -73,11 +78,12 @@ STAGES=(
 # Structured handoff prompt - captures essential context
 generate_handoff_prompt() {
     local stage_name="$1"
+    local stage_num="$2"
     echo "/plan Save all information from this chat into your markdown plan file(s), then generate a detailed handoff summary.
     
 Include:
 
-## Current Stage: $stage_name
+## Current Stage: $stage_name (Stage $stage_num)
 
 ## Essential Context
 - All information and principles from the original task specified by the user
@@ -141,15 +147,33 @@ UPDATE_DOCS="update your planning/markdown file(s)."
 USE_AGENTS="use many agents."
 PLAN_SUFFIX="$DEBUG_HELP $UPDATE_DOCS $USE_AGENTS"
 
+# Get which iteration of this stage type we're at
+get_stage_iteration() {
+    local stage_name="$1"
+    local current_stage_num="$2"
+    local iteration=1
+    
+    for ((i=0; i<current_stage_num-1; i++)); do
+        if [ "${STAGES[$i]}" = "$stage_name" ]; then
+            ((iteration++))
+        fi
+    done
+    
+    echo "$iteration"
+}
+
 # Get stage-specific prompt
 get_stage_prompt() {
     local stage_name="$1"
+    local stage_num="$2"
+    local iteration=$(get_stage_iteration "$stage_name" "$stage_num")
+    
     case "$stage_name" in
         "investigate") echo "/plan conduct deep and thorough investigations, research, testing, debugging, etc on the task at hand. do not plan/execute yet, just investigate/research. $PLAN_SUFFIX" ;;
-        "plan") echo "/plan create / continue to flesh out the plan. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. $PLAN_SUFFIX" ;;
+        "plan") echo "/plan create / continue to flesh out the plan. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. This is plan iteration $iteration. $PLAN_SUFFIX" ;;
         "compact") echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
-        "execute") echo "/plan execute the plan. if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. $PLAN_SUFFIX" ;;
-        "verify") echo "/plan verify that all tasks in the plan are complete, through whatever means and methods required to verify and validate. $PLAN_SUFFIX" ;;
+        "execute") echo "/plan execute the plan. if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. This is execute iteration $iteration. $PLAN_SUFFIX" ;;
+        "verify") echo "/plan verify that all tasks in the plan are complete, through whatever means and methods required to verify and validate. This is verify iteration $iteration. $PLAN_SUFFIX" ;;
         "cleanup") echo "/plan conduct a deep and thorough cleanup of the project. remove all files and directories that are no longer needed." ;;
         "summary") echo "/plan summarize this conversation so far. output the summary here (not into a file)." ;;
     esac
@@ -177,7 +201,7 @@ execute_stage_with_handoff() {
     log_with_timestamp "📝 Context built: $context_length words from previous stages"
     
     log_with_timestamp "🎯 Generating stage-specific prompt for: $stage_name"
-    local stage_prompt=$(get_stage_prompt "$stage_name")
+    local stage_prompt=$(get_stage_prompt "$stage_name" "$stage_num")
     
     # Create full prompt with SLASH COMMAND FIRST, then context
     local full_prompt="$stage_prompt
@@ -221,7 +245,7 @@ EOF"
     log_with_timestamp "📋 GENERATING HANDOFF SUMMARY..."
     update_workflow_status "GENERATING_HANDOFF" "$stage_name" "Creating handoff summary"
     
-    local handoff_prompt=$(generate_handoff_prompt "$stage_name")
+    local handoff_prompt=$(generate_handoff_prompt "$stage_name" "$stage_num")
     docker exec "$CONTAINER_NAME" bash -c "cat > /tmp/handoff_prompt.txt << 'EOF'
 $handoff_prompt
 EOF"
