@@ -142,15 +142,28 @@ STAGES=(
     "summary"
 )
 
+# Common prompt fragments to avoid repetition
+DEBUG_HELP="dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful."
+UPDATE_DOCS="update your planning/markdown file(s)."
+USE_AGENTS="use many agents."
+PLAN_SUFFIX="$DEBUG_HELP $UPDATE_DOCS $USE_AGENTS"
+
 get_prompt() {
     case "$1" in
-        "investigate") echo "/plan conduct deep and thorough investigations, research, testing, debugging, etc on the task at hand. do not plan/execute yet, just investigate/research. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "plan") echo "/plan create a detailed plan for the task at hand. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "compact") echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
-        "execute") echo "/plan execute the plan. if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "verify") echo "/plan verify that all tasks in the plan are complete, through whatever means and methods required to verify and validate. dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful. update your planning/markdown file(s). use many agents." ;;
-        "cleanup") echo "/plan conduct a deep and thorough cleanup of the project. remove all files and directories that are no longer needed." ;;
-        "summary") echo "/plan summarize this conversation so far. output the summary here (not into a file)." ;;
+        "investigate") 
+            echo "/plan conduct deep and thorough investigations, research, testing, debugging, etc on the task at hand. do not plan/execute yet, just investigate/research. $PLAN_SUFFIX" ;;
+        "plan") 
+            echo "/plan create a detailed plan for the task at hand. ensure that there is defined scope, no ambiguity, and no chance for overly complex solutions or overengineering. do not execute yet, just plan. $PLAN_SUFFIX" ;;
+        "compact") 
+            echo "/compact remember everything so far in verbose detail. list the names/locations of all planning/markdown file(s) relevant in this conversation specifically." ;;
+        "execute") 
+            echo "/plan execute the plan. if there is nothing left to do (within the plan and scope), then just return (do nothing). if there are remaining items, lets keep going. $PLAN_SUFFIX" ;;
+        "verify") 
+            echo "/plan verify that all tasks in the plan are complete, through whatever means and methods required to verify and validate. $PLAN_SUFFIX" ;;
+        "cleanup") 
+            echo "/plan conduct a deep and thorough cleanup of the project. remove all files and directories that are no longer needed." ;;
+        "summary") 
+            echo "/plan summarize this conversation so far. output the summary here (not into a file)." ;;
     esac
 }
 
