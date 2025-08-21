@@ -5,6 +5,10 @@
 
 set -e
 
+# Source common library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/claude_common_lib.sh"
+
 # Usage and help functions
 show_usage() {
     cat << EOF
@@ -59,8 +63,7 @@ elif [ $# -eq 1 ]; then
     fi
     REPO_DIR="$(pwd)"
     # Verify current directory is valid
-    if [ ! -d "$REPO_DIR" ]; then
-        echo "Error: Current directory is not accessible"
+    if ! validate_directory "$REPO_DIR"; then
         exit 1
     fi
     INITIAL_TASK="$1"
@@ -78,11 +81,10 @@ elif [ $# -eq 2 ]; then
         show_usage
         exit 1
     fi
-    if [ ! -d "$1" ]; then
-        echo "Error: Directory '$1' does not exist"
+    if ! validate_directory "$1"; then
         exit 1
     fi
-    REPO_DIR="$(cd "$1" && pwd)"  # Get absolute path
+    REPO_DIR="$(get_absolute_path "$1")"  # Get absolute path
     INITIAL_TASK="$2"
 else
     echo "Error: Too many arguments provided"
@@ -93,30 +95,12 @@ fi
 SESSION_ID=$(uuidgen 2>/dev/null || echo "session-$$-$(date +%s)")
 
 # Check if Claude authentication exists
-if [ ! -d "$HOME/.claude" ]; then
-    echo "Error: No Claude authentication found on your system"
-    echo "Please run 'claude' first and complete authentication"
-    echo "This works with both API and subscription authentication"
+if ! check_claude_auth; then
     exit 1
 fi
 
 # Detect host timezone (macOS)
-HOST_TZ=""
-if [ -f "/etc/localtime" ]; then
-    # Try to read the timezone from the localtime symlink
-    HOST_TZ=$(readlink /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||')
-fi
-
-# If that didn't work, try alternative methods
-if [ -z "$HOST_TZ" ]; then
-    # Try systemsetup (macOS specific)
-    HOST_TZ=$(systemsetup -gettimezone 2>/dev/null | awk -F': ' '{print $2}')
-fi
-
-# If still no timezone, try date command
-if [ -z "$HOST_TZ" ]; then
-    HOST_TZ=$(date +%Z 2>/dev/null)
-fi
+HOST_TZ="$(detect_host_timezone)"
 
 # Host-side paths (for file operations on host)
 HOST_PLAN_DIR="$REPO_DIR/plan"
@@ -554,19 +538,7 @@ CONTAINER_START_TIME=$(date +%s)
 docker run -d --name "$CONTAINER_NAME" \
     --mount type=bind,source="$REPO_DIR",target=/workspace \
     --mount type=bind,source="$HOME/.claude",target=/home/dev/.claude \
-    --network bridge \
-    --user 1000:1000 \
-    --workdir /workspace \
-    --env TERM=xterm-256color \
-    --env IS_SANDBOX=1 \
-    --env CLAUDE_CONFIG_DIR=/home/dev/.claude \
-    --env CLAUDE_CODE_BYPASS_ALL_PERMISSIONS=1 \
-    --env CLAUDE_CODE_SUPPRESS_UI_PROMPTS=1 \
-    --env ANTHROPIC_DISABLE_SAFETY_CHECKS=1 \
-    --env CLAUDE_CODE_ENTERPRISE_MODE=1 \
-    --env DISABLE_AUTOUPDATER=1 \
-    --env CLAUDE_CODE_ENABLE_TELEMETRY=0 \
-    --env CLAUDE_WORKING_DIRECTORIES="/workspace:/workspace/..:/:/home:/etc:/usr:/var:/tmp:/root" \
+    $(get_base_docker_env_args) \
     ${HOST_TZ:+--env TZ="$HOST_TZ"} \
     claude_code_container tail -f /dev/null > /dev/null 2>&1
 
