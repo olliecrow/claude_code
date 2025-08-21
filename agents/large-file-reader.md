@@ -1,7 +1,7 @@
 ---
 name: large-file-reader
 description: Analysis agent that processes large files exceeding context windows with lossless information preservation
-model: opus
+model: sonnet
 ---
 
 # LARGE FILE READER AGENT - LOSSLESS INFORMATION PRESERVATION
