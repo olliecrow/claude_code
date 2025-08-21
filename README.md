@@ -21,6 +21,15 @@ Historical: https://github.com/ryoppippi/ccusage
 
 Realtime: https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor
 
+## Useful Aliases
+
+```
+alias ccc="{path_to_repo}/container/run.sh"
+alias ccs="{path_to_repo}/container/run_sequence.sh"
+alias ccu="npx --yes ccusage@latest"
+alias ccm="claude-monitor"
+```
+
 ## Directories
 
 - `agents/`: take advantage of agent/subagent functionality.
