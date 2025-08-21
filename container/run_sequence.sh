@@ -172,9 +172,18 @@ execute_stage() {
     # Build the command
     if [ "$is_first" = "true" ]; then
         # First stage creates a new session and includes the initial task
-        local full_prompt="Task: $INITIAL_TASK
+        # For slash commands, they must come first, then the task
+        if [[ "$stage_prompt" == /* ]]; then
+            # Slash command detected - put it first
+            local full_prompt="$stage_prompt
+
+Task: $INITIAL_TASK"
+        else
+            # Regular prompt - task comes first
+            local full_prompt="Task: $INITIAL_TASK
 
 $stage_prompt"
+        fi
         # First command creates the session
         local claude_cmd="claude --dangerously-skip-permissions"
         echo "Creating new conversation..."
