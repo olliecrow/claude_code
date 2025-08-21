@@ -42,7 +42,7 @@ Include:
 - All information and principles from the original task specified by the user
 - All information from this chat
 - All project files created, modified, or deleted
-- All plan files created, modified, or deleted
+- All plan/markdown files created, modified, or deleted
 - Critical decisions made
 - Any blockers or issues encountered
 - Don't overcomplicate the handoff summary.
