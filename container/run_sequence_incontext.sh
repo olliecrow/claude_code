@@ -194,7 +194,7 @@ execute_stage() {
 
 Task: $INITIAL_TASK"
         # First command creates the session
-        local claude_cmd="claude --dangerously-skip-permissions"
+        local claude_cmd="claude --model=sonnet --dangerously-skip-permissions"
         echo "Creating new conversation..."
     else
         # Subsequent stages continue the conversation with -c flag

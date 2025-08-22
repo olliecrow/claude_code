@@ -74,7 +74,7 @@ echo "Entering container..."
 if [ "$SHELL_MODE" = "--shell" ]; then
     docker exec -it "$CONTAINER_NAME" bash --login
 else
-    docker exec -it "$CONTAINER_NAME" bash -c "cd /workspace && claude --dangerously-skip-permissions"
+    docker exec -it "$CONTAINER_NAME" bash -c "cd /workspace && claude --model=sonnet --dangerously-skip-permissions"
 fi
 
 # Clean up container when done

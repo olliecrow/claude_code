@@ -398,7 +398,7 @@ EOF"
     # Run the stage with retry mechanism
     log_with_timestamp "⚡ Claude is processing stage $stage_name..."
     local claude_start_time=$(date +%s)
-    retry_claude_operation "Claude stage execution for $stage_name" "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/stage_prompt.txt | claude --dangerously-skip-permissions'"
+    retry_claude_operation "Claude stage execution for $stage_name" "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/stage_prompt.txt | claude --model=sonnet --dangerously-skip-permissions'"
     local stage_exit_code=$?
     local claude_end_time=$(date +%s)
     local claude_duration=$((claude_end_time - claude_start_time))
@@ -430,7 +430,7 @@ EOF"
     local handoff_start_time=$(date +%s)
     log_with_timestamp "🔄 Requesting handoff summary from Claude..."
     
-    retry_claude_operation "Claude handoff generation for $stage_name" "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/handoff_prompt.txt | claude --dangerously-skip-permissions' > '$handoff_file'"
+    retry_claude_operation "Claude handoff generation for $stage_name" "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/handoff_prompt.txt | claude --model=sonnet --dangerously-skip-permissions' > '$handoff_file'"
     local handoff_end_time=$(date +%s)
     local handoff_duration=$((handoff_end_time - handoff_start_time))
     
