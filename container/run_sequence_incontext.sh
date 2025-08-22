@@ -199,7 +199,7 @@ Task: $INITIAL_TASK"
     else
         # Subsequent stages continue the conversation with -c flag
         local full_prompt="$stage_prompt"
-        local claude_cmd="claude -c --dangerously-skip-permissions"
+        local claude_cmd="claude -c --model=sonnet --dangerously-skip-permissions"
         echo "Continuing conversation with -c flag..."
     fi
     
