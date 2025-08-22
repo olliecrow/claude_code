@@ -83,7 +83,7 @@ docker run -d \
 echo "Executing Claude Code with prompt..."
 
 # Start the command in background and capture its PID
-docker exec "$CONTAINER_NAME" bash -c "cd /workspace && claude --dangerously-skip-permissions \"$COMMAND_PROMPT\"" &
+docker exec "$CONTAINER_NAME" bash -c "cd /workspace && claude --model=sonnet --dangerously-skip-permissions \"$COMMAND_PROMPT\"" &
 COMMAND_PID=$!
 
 # Wait for the command with 30-minute timeout
