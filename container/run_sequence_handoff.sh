@@ -305,7 +305,7 @@ $(cat "$HOST_HANDOFF_DIR/initial_task.txt")
 }
 
 # Common prompt fragments to avoid repetition
-DEBUG_HELP="dont hesitate to use standalone/one-off/debugging scripts & add print lines during this task if helpful."
+DEBUG_HELP="dont hesitate to use standalone/one-off/debugging scripts & add print lines during this task if helpful. test and check all assumptions."
 UPDATE_PLAN="update the plan as you go. ensure that the planning/markdown file(s) are always up to date."
 USE_AGENTS="use many agents."
 PLAN_SUFFIX="$DEBUG_HELP $UPDATE_PLAN $USE_AGENTS"
