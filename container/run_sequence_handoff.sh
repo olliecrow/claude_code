@@ -303,10 +303,10 @@ $(cat "$HOST_HANDOFF_DIR/initial_task.txt")
 }
 
 # Common prompt fragments to avoid repetition
-DEBUG_HELP="dont hesitate to use standalone/debugging scripts & add print lines during this task if helpful."
-UPDATE_DOCS="update your planning/markdown file(s)."
+DEBUG_HELP="dont hesitate to use standalone/one-off/debugging scripts & add print lines during this task if helpful."
+UPDATE_PLAN="continually update your planning/markdown file(s)."
 USE_AGENTS="use many agents."
-PLAN_SUFFIX="$DEBUG_HELP $UPDATE_DOCS $USE_AGENTS"
+PLAN_SUFFIX="$DEBUG_HELP $UPDATE_PLAN $USE_AGENTS"
 
 # Get which iteration of this stage type we're at
 get_stage_iteration() {
