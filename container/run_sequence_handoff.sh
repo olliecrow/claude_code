@@ -262,6 +262,8 @@ Include:
 - Include specific file paths and complete status
 - This is a rolling summary - each stage builds on all previous work
 
+Write a very detailed handoff document for another person to take over.
+
 Output this consolidated handoff summary in plain text (not markdown) for easy parsing."
 }
 
