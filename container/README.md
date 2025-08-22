@@ -2,6 +2,8 @@
 
 Docker environment for running Claude Code with host isolation.
 
+NOTE: container will always use sonnet (`--model=sonnet`) for usage management - model can be adjusted within a chat with `/model`.
+
 WARNING: uses `dangerously-skip-permissions` mode (i.e. YOLO mode).
 
 ## Quick Start
