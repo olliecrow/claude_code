@@ -31,13 +31,13 @@ setup_container_settings() {
   "permissions": {
     "defaultMode": "bypassPermissions",
     "allow": [
-      "Bash(*)", "Edit(*)", "Glob(*)", "Grep(*)", "LS(*)", "List(*)", "List(..)",
-      "MultiEdit(*)", "NotebookEdit(*)", "NotebookRead(*)", "Read(*)", "Task(*)",
-      "TodoWrite(*)", "WebFetch(*)", "WebSearch(*)", "Write(*)"
+      "Bash", "Edit", "Glob", "Grep", "LS", "List", 
+      "MultiEdit", "NotebookEdit", "NotebookRead", "Read", "Task",
+      "TodoWrite", "WebSearch", "Write"
     ],
     "deny": [
-      "Bash(*CLAUDE.md*)", "Edit(*CLAUDE.md*)", "MultiEdit(*CLAUDE.md*)",
-      "WriteFile(*CLAUDE.md)", "Write(*CLAUDE.md)", "Bash(git*)"
+      "Bash(:*CLAUDE.md:*)", "Edit(*CLAUDE.md*)", "MultiEdit(*CLAUDE.md*)",
+      "WriteFile(*CLAUDE.md)", "Write(*CLAUDE.md)", "Bash(git:*)"
     ],
     "additionalDirectories": ["/", "/workspace", "/home", "/etc", "/usr", "/var", "/tmp", "/root", "../"]
   }
