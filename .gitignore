@@ -309,5 +309,6 @@ plan/**
 **/plan/**
 
 .claude/
+*codex*/
 
 update_from_personal.sh
