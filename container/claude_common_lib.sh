@@ -64,6 +64,7 @@ get_base_docker_env_args() {
 --workdir /workspace \
 --env TERM=xterm-256color \
 --env IS_SANDBOX=1 \
+--env CLAUDE_HOME=/home/dev/.claude \
 --env CLAUDE_CONFIG_DIR=/home/dev/.claude \
 --env CLAUDE_CODE_BYPASS_ALL_PERMISSIONS=1 \
 --env CLAUDE_CODE_SUPPRESS_UI_PROMPTS=1 \

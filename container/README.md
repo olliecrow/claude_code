@@ -6,13 +6,25 @@ NOTE: container will always use sonnet (`--model=sonnet`) for usage management -
 
 WARNING: uses `dangerously-skip-permissions` mode (i.e. YOLO mode).
 
+## Features
+
+- **Enhanced Security**: Multiple layers of Git blocking (APT pinning + wrapper scripts)
+- **Developer Tools**: ripgrep, ffmpeg, sccache for productivity
+- **ML/Graphics Support**: Libraries for OpenCV, matplotlib, and data science workflows
+- **Build Flexibility**: Optional build tools via `--minimal` flag
+- **Rust & Node.js**: Full toolchain support for modern development
+- **Temporary Caching**: All package caches isolated to `/tmp` for security
+
 ## Quick Start
 
 ```bash
-# Build container
-docker build -t claude_code_container .
+# Build full container with all tools (default)
+./build.sh
 
-# Build container from scratch
+# Build minimal container without extra build tools
+./build.sh --minimal
+
+# Build container from scratch (alternative to build.sh)
 docker build --pull --no-cache -t claude_code_container .
 
 # Run with your project directory (Claude starts automatically)
