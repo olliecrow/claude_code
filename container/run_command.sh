@@ -79,21 +79,21 @@ docker run -d \
     ${HOST_TZ:+--env TZ="$HOST_TZ"} \
     claude_code_container tail -f /dev/null
 
-# Execute Claude Code with the command prompt (30-minute timeout using background process)
+# Execute Claude Code with the command prompt (90-minute timeout using background process)
 echo "Executing Claude Code with prompt..."
 
 # Start the command in background and capture its PID
-docker exec "$CONTAINER_NAME" bash -c "cd /workspace && claude --model=sonnet --dangerously-skip-permissions \"$COMMAND_PROMPT\"" &
+docker exec "$CONTAINER_NAME" bash -c "cd /workspace && claude --model=opus --dangerously-skip-permissions \"$COMMAND_PROMPT\"" &
 COMMAND_PID=$!
 
-# Wait for the command with 30-minute timeout
-TIMEOUT=1800  # 30 minutes
+# Wait for the command with 90-minute timeout
+TIMEOUT=5400  # 90 minutes
 ELAPSED=0
 SLEEP_INTERVAL=5
 
 while kill -0 $COMMAND_PID 2>/dev/null; do
     if [ $ELAPSED -ge $TIMEOUT ]; then
-        echo "Command timed out after 30 minutes, killing process..."
+        echo "Command timed out after 90 minutes, killing process..."
         kill $COMMAND_PID 2>/dev/null || true
         wait $COMMAND_PID 2>/dev/null || true
         exit 124
