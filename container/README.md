@@ -2,7 +2,7 @@
 
 Docker environment for running Claude Code with host isolation.
 
-NOTE: container will always use sonnet (`--model=sonnet`) for usage management - model can be adjusted within a chat with `/model`.
+NOTE: container will always use opus (`--model=opus`) by default - model can be adjusted within a chat with `/model`.
 
 WARNING: uses `dangerously-skip-permissions` mode (i.e. YOLO mode).
 
@@ -41,9 +41,47 @@ docker build --pull --no-cache -t claude_code_container .
 
 # Or run a sequence of commands in the container (with rollup handoffs), then exit
 ./run_sequence_handoff.sh /path/to/your/project "this is my seed prompt"
+
+# Or run prompts from a file sequentially in the container, then exit
+./run_sequence_prompts.sh /path/to/your/project /path/to/prompts.txt
 ```
 
 Note: The first time running `run.sh`, you may have to login to Claude Code. This should only occur once. All subsequent uses of `run.sh` should not require you to log into Claude Code.
+
+## File-Based Prompt Sequences
+
+The `run_sequence_prompts.sh` script allows you to execute multiple prompts from a text file, using handoff mechanism for context management:
+
+### Features
+- Load prompts from a text file with blank line separation
+- Support for multi-line prompts
+- `/compact` triggers handoff to new conversation (compatible with codex)
+- Comments (lines starting with #) are ignored
+- Context preserved through handoff summaries between conversations
+
+### Usage
+```bash
+# Run prompts in current directory
+./run_sequence_prompts.sh prompts.txt
+
+# Run prompts in specific project
+./run_sequence_prompts.sh /path/to/project prompts.txt
+```
+
+### Prompt File Format
+```
+# Comments are ignored
+First prompt here
+
+/compact
+Second prompt after compacting context
+
+Multi-line prompt
+with additional details
+on separate lines
+```
+
+See `example_prompts.txt` for a complete example.
 
 ## Useful Tip
 
