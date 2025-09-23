@@ -38,7 +38,7 @@ ccc .
 ```
 
 ## API Key Notes
-- Claude Code usually reuses `~/.claude`; no explicit key needed.
+- Default behaviour reuses `~/.claude`; no explicit key needed.
 - Generate keys via https://console.anthropic.com/ when required.
 - On macOS: `security find-generic-password -s "Claude Code" -a "$USER" -w`.
 - Optional env export before launch: `export ANTHROPIC_API_KEY=...`.
