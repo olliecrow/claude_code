@@ -4,6 +4,7 @@
 # Each stage runs as a separate conversation with structured summaries passed between
 
 set -e
+set -o pipefail
 
 # Source common library
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -397,10 +398,12 @@ EOF"
     local prompt_send_duration=$((prompt_send_end - prompt_send_start))
     log_with_timestamp "⏱️  Prompt transfer took ${prompt_send_duration}s"
     
-    # Run the stage with retry mechanism
+    # Run the stage with retry mechanism, capturing stdout for inspection
+    local stage_output_file="$HOST_HANDOFF_DIR/stage_${stage_num}_output.txt"
     log_with_timestamp "⚡ Claude is processing stage $stage_name..."
     local claude_start_time=$(date +%s)
-    retry_claude_operation "Claude stage execution for $stage_name" "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/stage_prompt.txt | claude -p --model=opus --dangerously-skip-permissions'"
+    retry_claude_operation "Claude stage execution for $stage_name" \
+        "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/stage_prompt.txt | claude -p --model=opus --dangerously-skip-permissions' | tee '$stage_output_file'"
     local stage_exit_code=$?
     local claude_end_time=$(date +%s)
     local claude_duration=$((claude_end_time - claude_start_time))
@@ -411,6 +414,7 @@ EOF"
     else
         log_with_timestamp "✅ Stage $stage_name completed successfully in ${claude_duration}s"
     fi
+    log_with_timestamp "📝 Stage output saved to: $stage_output_file"
     
     # Generate handoff summary (separate Claude call)
     log_with_timestamp "📋 GENERATING HANDOFF SUMMARY..."
@@ -428,13 +432,17 @@ EOF"
     log_with_timestamp "⏱️  Handoff prompt transfer took ${handoff_prompt_duration}s"
     
     # Capture handoff summary with retry mechanism
+    local raw_handoff_file="$HOST_HANDOFF_DIR/stage_${stage_num}_handoff_raw.txt"
     local handoff_file="$HOST_HANDOFF_DIR/stage_${stage_num}_handoff.txt"
     local handoff_start_time=$(date +%s)
     log_with_timestamp "🔄 Requesting handoff summary from Claude..."
     
-    retry_claude_operation "Claude handoff generation for $stage_name" "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/handoff_prompt.txt | claude -p --model=opus --dangerously-skip-permissions' > '$handoff_file'"
+    retry_claude_operation "Claude handoff generation for $stage_name" \
+        "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/handoff_prompt.txt | claude -p --model=opus --dangerously-skip-permissions' | tee '$raw_handoff_file'"
     local handoff_end_time=$(date +%s)
     local handoff_duration=$((handoff_end_time - handoff_start_time))
+
+    write_handoff_from_output "$raw_handoff_file" "$handoff_file"
     
     # Check handoff quality
     local handoff_words=$(wc -w < "$handoff_file" 2>/dev/null || echo "0")
@@ -486,6 +494,8 @@ FILES:
 ------
 - $prompt_file
 - $handoff_file
+- $raw_handoff_file
+- $stage_output_file
 - $stage_summary_file
 EOF
     

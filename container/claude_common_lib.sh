@@ -74,3 +74,40 @@ get_base_docker_env_args() {
 --env CLAUDE_CODE_ENABLE_TELEMETRY=0 \
 --env CLAUDE_WORKING_DIRECTORIES=/workspace:/workspace/..:/:/home:/etc:/usr:/var:/tmp:/root"
 }
+
+# Extract structured handoff section when present; otherwise copy entire file
+write_handoff_from_output() {
+    local source_file="$1"
+    local destination_file="$2"
+
+    if [ -z "$source_file" ] || [ ! -f "$source_file" ]; then
+        echo "Warning: Missing conversation output for handoff" | tee "$destination_file"
+        return
+    fi
+
+    local summary_header=""
+    local header_candidates=(
+        "## HANDOFF SUMMARY"
+        "## Comprehensive Handoff Summary"
+        "## Handoff Summary"
+    )
+
+    for header in "${header_candidates[@]}"; do
+        if grep -q "^$header" "$source_file"; then
+            summary_header="$header"
+            break
+        fi
+    done
+
+    if [ -n "$summary_header" ]; then
+        awk -v header="$summary_header" '
+            $0 == header {printing=1}
+            printing {print}
+        ' "$source_file" > "$destination_file"
+        if [ ! -s "$destination_file" ]; then
+            cp "$source_file" "$destination_file"
+        fi
+    else
+        cp "$source_file" "$destination_file"
+    fi
+}
