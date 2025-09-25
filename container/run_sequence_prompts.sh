@@ -5,6 +5,7 @@
 # Compatible with same prompt files as codex
 
 set -e
+set -o pipefail
 
 # Source common library
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -248,6 +249,7 @@ run_prompt_with_handoff() {
     local conversation_num="$2"
     local is_handoff_continuation="$3"
     local previous_handoff="$4"
+    local conversation_output_file="$HOST_HANDOFF_DIR/conversation_${conversation_num}_output.txt"
 
     log_message "=================================="
     log_message "Conversation $conversation_num"
@@ -276,9 +278,11 @@ $prompt_text"
     # Execute using SDK mode (no TTY needed)
     log_message "Starting new conversation..."
     echo "$full_prompt" | docker exec -i "$CONTAINER_NAME" bash -c \
-        "cd /workspace && claude -p --model=opus --dangerously-skip-permissions"
+        "cd /workspace && claude -p --model=opus --dangerously-skip-permissions" | tee "$conversation_output_file"
 
     log_message "Conversation $conversation_num completed"
+
+    LAST_CONVERSATION_OUTPUT_FILE="$conversation_output_file"
 }
 
 # Process prompts, grouping by /compact boundaries
@@ -286,6 +290,7 @@ CONVERSATION_NUM=1
 CURRENT_CONVERSATION_PROMPTS=()
 PREVIOUS_HANDOFF=""
 FIRST_PROMPT=""
+LAST_CONVERSATION_OUTPUT_FILE=""
 
 for i in "${!PROMPTS[@]}"; do
     prompt="${PROMPTS[$i]}"
@@ -320,15 +325,9 @@ for i in "${!PROMPTS[@]}"; do
                 run_prompt_with_handoff "$combined_prompt" "$CONVERSATION_NUM" "true" "$PREVIOUS_HANDOFF"
             fi
 
-            # Capture handoff from container output (last part of conversation)
-            # Note: In production, we'd parse Claude's actual response
-            # For now, we'll save a placeholder
+            # Capture handoff from actual Claude output
             HANDOFF_FILE="$HOST_HANDOFF_DIR/prompt_${CONVERSATION_NUM}_handoff.txt"
-            echo "Handoff from conversation $CONVERSATION_NUM:
-- Completed prompts: ${#CURRENT_CONVERSATION_PROMPTS[@]}
-- Ready for next conversation
-[Context would be extracted from Claude's response]" > "$HANDOFF_FILE"
-
+            write_handoff_from_output "$LAST_CONVERSATION_OUTPUT_FILE" "$HANDOFF_FILE"
             PREVIOUS_HANDOFF=$(cat "$HANDOFF_FILE")
 
             # Reset for next conversation
@@ -365,6 +364,10 @@ if [ ${#CURRENT_CONVERSATION_PROMPTS[@]} -gt 0 ]; then
     else
         run_prompt_with_handoff "$combined_prompt" "$CONVERSATION_NUM" "true" "$PREVIOUS_HANDOFF"
     fi
+
+    HANDOFF_FILE="$HOST_HANDOFF_DIR/prompt_${CONVERSATION_NUM}_handoff.txt"
+    write_handoff_from_output "$LAST_CONVERSATION_OUTPUT_FILE" "$HANDOFF_FILE"
+    PREVIOUS_HANDOFF=$(cat "$HANDOFF_FILE")
 fi
 
 # Update final status
