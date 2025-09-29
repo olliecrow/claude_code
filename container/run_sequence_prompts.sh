@@ -201,6 +201,21 @@ fi
 
 log_info "Found ${#PROMPTS[@]} prompt(s) to execute"
 log_info "Working directory inside container will be $PROJECT_DIR"
+for index in "${!PROMPTS[@]}"; do
+    prompt_number=$((index + 1))
+    prompt_chars=${#PROMPTS[$index]}
+    prompt_preview=$(echo "${PROMPTS[$index]}" | tr '\n' ' ' | head -c 120)
+    if [ $prompt_chars -gt 120 ]; then
+        prompt_preview+="..."
+    fi
+    log_info "Prompt $prompt_number (${prompt_chars} chars): $prompt_preview"
+done
+
+# Ensure python3 is available for JSON parsing
+if ! command -v python3 >/dev/null 2>&1; then
+    log_error "python3 is required but was not found on PATH"
+    exit 1
+fi
 
 # Source shared settings library if available
 if [ -f "$SCRIPT_DIR/claude_settings_lib.sh" ]; then
@@ -303,54 +318,199 @@ Be thorough but concise. This summary will be the only context passed forward.
 Output in plain text format."
 }
 
-# Function to execute a prompt in a new conversation
-run_prompt_with_handoff() {
+append_response_to_conversation_log() {
+    local conversation_output_file="$1"
+    local prompt_label="$2"
+    local response_file="$3"
+
+    {
+        printf '### %s\n' "$prompt_label"
+        printf '\n'
+        cat "$response_file"
+        printf '\n\n'
+    } >> "$conversation_output_file"
+}
+
+extract_json_field() {
+    local json_file="$1"
+    local field_name="$2"
+
+    python3 - "$json_file" "$field_name" <<'PY'
+import json
+import sys
+
+json_path = sys.argv[1]
+field = sys.argv[2]
+
+try:
+    with open(json_path, 'r', encoding='utf-8') as fh:
+        data = json.load(fh)
+except Exception:
+    sys.exit(1)
+
+value = data
+for part in field.split('.'):
+    if isinstance(value, dict):
+        value = value.get(part)
+    else:
+        value = None
+        break
+
+if value is None:
+    print('')
+else:
+    if isinstance(value, (list, dict)):
+        print(json.dumps(value, ensure_ascii=False))
+    else:
+        print(str(value))
+PY
+}
+
+start_conversation() {
     local prompt_text="$1"
     local conversation_num="$2"
-    local is_handoff_continuation="$3"
-    local previous_handoff="$4"
-    local conversation_output_file="$HOST_HANDOFF_DIR/conversation_${conversation_num}_output.txt"
+    local conversation_output_file="$3"
+    local session_file="$4"
+    local previous_handoff="$5"
 
-    log_message "=================================="
-    log_message "Conversation $conversation_num"
-    log_message "=================================="
-    if [ "$is_handoff_continuation" = "true" ] && [ -n "$previous_handoff" ]; then
-        log_info "Conversation $conversation_num will include context from previous handoff"
-    else
-        log_info "Conversation $conversation_num will start without prior handoff context"
-    fi
-
-    log_info "Prompt length: ${#prompt_text} characters"
-    log_info "Conversation output will be written to $conversation_output_file"
-
-    # Build the full prompt with context if needed
-    local full_prompt=""
-    if [ "$is_handoff_continuation" = "true" ] && [ -n "$previous_handoff" ]; then
+    local full_prompt="$prompt_text"
+    if [ -n "$previous_handoff" ]; then
         full_prompt="Previous conversation summary:
 $previous_handoff
 
 Current task:
 $prompt_text"
-    else
-        full_prompt="$prompt_text"
     fi
 
-    # Show preview
     local preview=$(echo "$prompt_text" | head -c 100)
+    log_message "Conversation $conversation_num - prompt 1 length ${#prompt_text} characters"
     if [ ${#prompt_text} -gt 100 ]; then
-        log_message "Prompt preview: ${preview}..."
+        log_message "Conversation $conversation_num - prompt 1 preview: ${preview}..."
     else
-        log_message "Prompt: $preview"
+        log_message "Conversation $conversation_num - prompt 1 preview: $preview"
     fi
 
-    # Execute using SDK mode (no TTY needed)
-    log_info "Starting new conversation inside container"
-    echo "$full_prompt" | docker exec -i "$CONTAINER_NAME" bash -c \
-        "cd /workspace && claude -p --model=opus --dangerously-skip-permissions" | tee "$conversation_output_file"
+    local json_temp
+    json_temp=$(mktemp)
+    local prompt_output_file="$HOST_HANDOFF_DIR/conversation_${conversation_num}_prompt_1.json"
 
-    log_info "Conversation $conversation_num completed"
+    log_stage "Conversation $conversation_num: starting initial turn"
+    if ! echo "$full_prompt" | docker exec -i "$CONTAINER_NAME" bash -c \
+        "cd /workspace && claude -p --model=opus --dangerously-skip-permissions --output-format json" | tee "$json_temp"; then
+        log_error "Claude CLI returned an error for conversation $conversation_num initial prompt"
+        rm -f "$json_temp"
+        exit 1
+    fi
+
+    cp "$json_temp" "$prompt_output_file"
+    LAST_PROMPT_OUTPUT_FILE="$prompt_output_file"
+
+    local session_id
+    session_id=$(extract_json_field "$json_temp" "session_id")
+    if [ -z "$session_id" ] || [ "$session_id" = "null" ]; then
+        log_error "Failed to parse session_id for conversation $conversation_num"
+        rm -f "$json_temp"
+        exit 1
+    fi
+    printf '%s' "$session_id" > "$session_file"
+    log_info "Conversation $conversation_num: obtained session ID $session_id"
+
+    local result_text
+    result_text=$(extract_json_field "$json_temp" "result")
+    if [ -z "$result_text" ]; then
+        log_warn "Result text missing for conversation $conversation_num prompt 1"
+    fi
+
+    local result_temp
+    result_temp=$(mktemp)
+    printf '%s' "$result_text" > "$result_temp"
+    append_response_to_conversation_log "$conversation_output_file" "Response 1" "$result_temp"
+    log_info "Conversation $conversation_num: appended Response 1 to $conversation_output_file"
+    rm -f "$result_temp"
+    rm -f "$json_temp"
+}
+
+continue_conversation() {
+    local prompt_text="$1"
+    local conversation_num="$2"
+    local session_id="$3"
+    local conversation_output_file="$4"
+    local response_label="$5"
+    local prompt_index="$6"
+
+    local preview=$(echo "$prompt_text" | head -c 100)
+    log_message "Conversation $conversation_num - prompt $prompt_index length ${#prompt_text} characters"
+    if [ ${#prompt_text} -gt 100 ]; then
+        log_message "Conversation $conversation_num - prompt $prompt_index preview: ${preview}..."
+    else
+        log_message "Conversation $conversation_num - prompt $prompt_index preview: $preview"
+    fi
+
+    local response_temp
+    response_temp=$(mktemp)
+    local per_prompt_file="$HOST_HANDOFF_DIR/conversation_${conversation_num}_prompt_${prompt_index}.txt"
+
+    log_info "Conversation $conversation_num: continuing with session $session_id for prompt $prompt_index"
+    if ! echo "$prompt_text" | docker exec -i "$CONTAINER_NAME" bash -c \
+        'cd /workspace && claude -p --model=opus --dangerously-skip-permissions --resume "$1"' _ "$session_id" | tee "$response_temp"; then
+        log_error "Claude CLI returned an error while continuing conversation $conversation_num"
+        rm -f "$response_temp"
+        exit 1
+    fi
+
+    cp "$response_temp" "$per_prompt_file"
+    LAST_PROMPT_OUTPUT_FILE="$per_prompt_file"
+    append_response_to_conversation_log "$conversation_output_file" "$response_label" "$response_temp"
+    log_info "Conversation $conversation_num: appended $response_label (prompt $prompt_index)"
+    rm -f "$response_temp"
+}
+
+execute_conversation() {
+    local conversation_num="$1"
+    shift
+    local conversation_prompts=("$@")
+
+    if [ ${#conversation_prompts[@]} -eq 0 ]; then
+        log_warn "Conversation $conversation_num was invoked with no prompts; skipping"
+        return
+    fi
+
+    log_stage "Conversation $conversation_num: executing ${#conversation_prompts[@]} prompt(s)"
+
+    local conversation_output_file="$HOST_HANDOFF_DIR/conversation_${conversation_num}_output.txt"
+    : > "$conversation_output_file"
+    local session_file="$HOST_HANDOFF_DIR/conversation_${conversation_num}_session.txt"
+
+    log_message "=================================="
+    log_message "Conversation $conversation_num"
+    log_message "=================================="
+
+    start_conversation "${conversation_prompts[0]}" "$conversation_num" "$conversation_output_file" "$session_file" "$PREVIOUS_HANDOFF"
+    local session_id
+    session_id="$(cat "$session_file")"
+
+    local idx=2
+    local prompt_position=2
+    while [ $idx -le ${#conversation_prompts[@]} ]; do
+        local prompt_text="${conversation_prompts[$((idx - 1))]}"
+        continue_conversation "$prompt_text" "$conversation_num" "$session_id" "$conversation_output_file" "Response $prompt_position" "$prompt_position"
+        idx=$((idx + 1))
+        prompt_position=$((prompt_position + 1))
+    done
+
+    # Generate and append handoff summary
+    local summary_prompt
+    summary_prompt="$(generate_handoff_prompt)"
+    continue_conversation "$summary_prompt" "$conversation_num" "$session_id" "$conversation_output_file" "Handoff Summary" "handoff"
+
+    local handoff_file="$HOST_HANDOFF_DIR/prompt_${conversation_num}_handoff.txt"
+    log_info "Extracting handoff summary for conversation $conversation_num to $handoff_file"
+    write_handoff_from_output "$LAST_PROMPT_OUTPUT_FILE" "$handoff_file"
+    PREVIOUS_HANDOFF=$(cat "$handoff_file")
+    log_info "Handoff summary for conversation $conversation_num captured (${#PREVIOUS_HANDOFF} characters)"
 
     LAST_CONVERSATION_OUTPUT_FILE="$conversation_output_file"
+    log_info "Conversation $conversation_num completed. Artifacts: $conversation_output_file, $session_file, $handoff_file"
 }
 
 # Process prompts, grouping by /compact boundaries
@@ -359,6 +519,7 @@ CURRENT_CONVERSATION_PROMPTS=()
 PREVIOUS_HANDOFF=""
 FIRST_PROMPT=""
 LAST_CONVERSATION_OUTPUT_FILE=""
+LAST_PROMPT_OUTPUT_FILE=""
 
 log_stage "Beginning prompt execution workflow"
 
@@ -379,34 +540,7 @@ for i in "${!PROMPTS[@]}"; do
         log_stage "Encountered /compact directive at prompt ${prompt_index}"
         # Process any accumulated prompts before the compact
         if [ ${#CURRENT_CONVERSATION_PROMPTS[@]} -gt 0 ]; then
-            # Combine prompts for this conversation
-            combined_prompt=""
-            for p in "${CURRENT_CONVERSATION_PROMPTS[@]}"; do
-                if [ -n "$combined_prompt" ]; then
-                    combined_prompt+=$'\n\n'
-                fi
-                combined_prompt+="$p"
-            done
-
-            # Add handoff generation request
-            combined_prompt+=$'\n\n'
-            combined_prompt+="$(generate_handoff_prompt)"
-
-            # Run the conversation
-            if [ $CONVERSATION_NUM -eq 1 ]; then
-                run_prompt_with_handoff "$combined_prompt" "$CONVERSATION_NUM" "false" ""
-            else
-                run_prompt_with_handoff "$combined_prompt" "$CONVERSATION_NUM" "true" "$PREVIOUS_HANDOFF"
-            fi
-
-            # Capture handoff from actual Claude output
-            HANDOFF_FILE="$HOST_HANDOFF_DIR/prompt_${CONVERSATION_NUM}_handoff.txt"
-            log_info "Extracting handoff summary for conversation $CONVERSATION_NUM to $HANDOFF_FILE"
-            write_handoff_from_output "$LAST_CONVERSATION_OUTPUT_FILE" "$HANDOFF_FILE"
-            PREVIOUS_HANDOFF=$(cat "$HANDOFF_FILE")
-            log_info "Handoff summary for conversation $CONVERSATION_NUM captured (${#PREVIOUS_HANDOFF} characters)"
-
-            # Reset for next conversation
+            execute_conversation "$CONVERSATION_NUM" "${CURRENT_CONVERSATION_PROMPTS[@]}"
             CURRENT_CONVERSATION_PROMPTS=()
             CONVERSATION_NUM=$((CONVERSATION_NUM + 1))
             log_stage "Advancing to conversation $CONVERSATION_NUM"
@@ -428,27 +562,7 @@ done
 
 # Process any remaining prompts
 if [ ${#CURRENT_CONVERSATION_PROMPTS[@]} -gt 0 ]; then
-    # Combine remaining prompts
-    combined_prompt=""
-    for p in "${CURRENT_CONVERSATION_PROMPTS[@]}"; do
-        if [ -n "$combined_prompt" ]; then
-            combined_prompt+=$'\n\n'
-        fi
-        combined_prompt+="$p"
-    done
-
-    # Run final conversation
-    if [ $CONVERSATION_NUM -eq 1 ]; then
-        run_prompt_with_handoff "$combined_prompt" "$CONVERSATION_NUM" "false" ""
-    else
-        run_prompt_with_handoff "$combined_prompt" "$CONVERSATION_NUM" "true" "$PREVIOUS_HANDOFF"
-    fi
-
-    HANDOFF_FILE="$HOST_HANDOFF_DIR/prompt_${CONVERSATION_NUM}_handoff.txt"
-    log_info "Extracting handoff summary for conversation $CONVERSATION_NUM to $HANDOFF_FILE"
-    write_handoff_from_output "$LAST_CONVERSATION_OUTPUT_FILE" "$HANDOFF_FILE"
-    PREVIOUS_HANDOFF=$(cat "$HANDOFF_FILE")
-    log_info "Handoff summary for conversation $CONVERSATION_NUM captured (${#PREVIOUS_HANDOFF} characters)"
+    execute_conversation "$CONVERSATION_NUM" "${CURRENT_CONVERSATION_PROMPTS[@]}"
 fi
 
 # Update final status
