@@ -7,6 +7,45 @@
 set -e
 set -o pipefail
 
+# Timestamped logging utilities so operators can follow progress as it happens
+timestamp() {
+    date '+%Y-%m-%d %H:%M:%S'
+}
+
+WORKFLOW_LOG_FILE=""
+EARLY_LOG_BUFFER=()
+
+log_event() {
+    local level="$1"
+    shift
+    local message="$*"
+    local ts="$(timestamp)"
+    local formatted="[$ts] [$level] $message"
+    printf '%s\n' "$formatted"
+
+    if [ -n "$WORKFLOW_LOG_FILE" ]; then
+        printf '%s\n' "$formatted" >> "$WORKFLOW_LOG_FILE"
+    else
+        EARLY_LOG_BUFFER+=("$formatted")
+    fi
+}
+
+log_info() {
+    log_event "INFO" "$@"
+}
+
+log_warn() {
+    log_event "WARN" "$@"
+}
+
+log_error() {
+    log_event "ERROR" "$@"
+}
+
+log_stage() {
+    log_event "STAGE" "$@"
+}
+
 # Source common library
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/claude_common_lib.sh"
@@ -68,12 +107,13 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
 fi
 
 # Input validation and argument parsing
+log_stage "Starting sequential prompt runner"
 PROJECT_DIR=""
 PROMPTS_PATH=""
 
 if [ $# -eq 0 ]; then
-    echo "Error: No arguments provided"
-    echo ""
+    log_error "No arguments provided"
+    printf '\n'
     show_usage
     exit 1
 elif [ $# -eq 1 ]; then
@@ -85,8 +125,8 @@ elif [ $# -eq 2 ]; then
     PROJECT_DIR="$1"
     PROMPTS_PATH="$2"
 else
-    echo "Error: Too many arguments provided"
-    echo ""
+    log_error "Too many arguments provided"
+    printf '\n'
     show_usage
     exit 1
 fi
@@ -98,22 +138,26 @@ fi
 
 # Get absolute path for project
 PROJECT_DIR="$(get_absolute_path "$PROJECT_DIR")"
+log_info "Project directory resolved to $PROJECT_DIR"
 
 # Validate prompts file
 if [ ! -f "$PROMPTS_PATH" ]; then
-    echo "Error: Prompts file not found: $PROMPTS_PATH"
+    log_error "Prompts file not found: $PROMPTS_PATH"
     exit 1
 fi
 
 # Get absolute path for prompts file
 PROMPTS_FILE="$(cd "$(dirname "$PROMPTS_PATH")" && pwd)/$(basename "$PROMPTS_PATH")"
+log_info "Prompts file resolved to $PROMPTS_FILE"
 
 # Check Claude authentication
 if ! check_claude_auth; then
     exit 1
 fi
+log_info "Claude authentication check passed"
 
 # Parse prompts from file into array
+log_stage "Loading prompts from file"
 PROMPTS=()
 current_prompt=""
 
@@ -150,62 +194,76 @@ fi
 
 # Check if we have any prompts
 if [ ${#PROMPTS[@]} -eq 0 ]; then
-    echo "Error: No prompts found in file: $PROMPTS_FILE"
-    echo "Make sure prompts are separated by blank lines and not all commented out"
+    log_error "No prompts found in file: $PROMPTS_FILE"
+    log_error "Make sure prompts are separated by blank lines and not all commented out"
     exit 1
 fi
 
-echo "Found ${#PROMPTS[@]} prompt(s) to execute"
-echo "Project directory: $PROJECT_DIR"
-echo ""
+log_info "Found ${#PROMPTS[@]} prompt(s) to execute"
+log_info "Working directory inside container will be $PROJECT_DIR"
 
 # Source shared settings library if available
 if [ -f "$SCRIPT_DIR/claude_settings_lib.sh" ]; then
     source "$SCRIPT_DIR/claude_settings_lib.sh"
     HAS_SETTINGS_LIB=true
+    log_info "Loaded claude_settings_lib.sh"
 else
     HAS_SETTINGS_LIB=false
+    log_warn "claude_settings_lib.sh not found; using default container settings"
 fi
 
 # Detect host timezone
 HOST_TZ="$(detect_host_timezone)"
 if [ -n "$HOST_TZ" ]; then
-    echo "Host timezone detected: $HOST_TZ"
+    log_info "Host timezone detected as $HOST_TZ"
 else
-    echo "Warning: Could not detect host timezone, container will use UTC"
+    log_warn "Could not detect host timezone; container will use UTC"
 fi
 
 # Setup container settings if library available
 if [ "$HAS_SETTINGS_LIB" = true ]; then
+    log_info "Applying container settings for project"
     setup_container_settings "$PROJECT_DIR"
+    log_info "Container settings applied"
 fi
 
 # Create handoff directory on host
 HOST_HANDOFF_DIR="$PROJECT_DIR/plan/handoffs"
 mkdir -p "$HOST_HANDOFF_DIR"
+log_info "Ensured handoff directory exists at $HOST_HANDOFF_DIR"
+
+WORKFLOW_LOG_FILE="$HOST_HANDOFF_DIR/workflow_log.txt"
+: > "$WORKFLOW_LOG_FILE"
+if [ ${#EARLY_LOG_BUFFER[@]} -gt 0 ]; then
+    printf '%s\n' "${EARLY_LOG_BUFFER[@]}" >> "$WORKFLOW_LOG_FILE"
+    EARLY_LOG_BUFFER=()
+fi
+log_info "Workflow log initialized at $WORKFLOW_LOG_FILE"
 
 # Container name with timestamp for uniqueness
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 CONTAINER_NAME="claude_prompts_handoff_${PROJECT_NAME}_$(date +%s)_$$"
+log_info "Container name generated: $CONTAINER_NAME"
 
 # Cleanup function
 cleanup() {
-    echo ""
-    echo "Cleaning up container..."
+    log_stage "Beginning cleanup"
+    log_info "Stopping and removing container $CONTAINER_NAME"
     docker rm -f "$CONTAINER_NAME" > /dev/null 2>&1 || true
     if [ "$HAS_SETTINGS_LIB" = true ]; then
+        log_info "Restoring settings.json from claude_settings_lib.sh"
         restore_settings_json
     fi
-    echo "Cleanup completed."
-    echo ""
-    echo "Handoff files saved in: $HOST_HANDOFF_DIR"
+    log_info "Cleanup completed"
+    log_info "Handoff files saved in: $HOST_HANDOFF_DIR"
 }
 
 # Ensure cleanup on exit
 trap cleanup EXIT
 
 # Start container
-echo "Starting container: $CONTAINER_NAME"
+log_stage "Starting execution container"
+log_info "Launching container $CONTAINER_NAME"
 docker run -d \
     --name "$CONTAINER_NAME" \
     --mount type=bind,source="$PROJECT_DIR",target=/workspace \
@@ -213,19 +271,21 @@ docker run -d \
     $(get_base_docker_env_args) \
     ${HOST_TZ:+--env TZ="$HOST_TZ"} \
     claude_code_container tail -f /dev/null > /dev/null
+log_info "Container $CONTAINER_NAME launched"
 
 # Wait for container to be ready
+log_info "Waiting for container services to initialize"
 sleep 2
+log_info "Container wait period complete"
 
 # Initialize workflow status
 echo "STARTED: $(date)" > "$HOST_HANDOFF_DIR/workflow_status.txt"
-echo "" > "$HOST_HANDOFF_DIR/workflow_log.txt"
+log_info "Workflow status file initialized at $HOST_HANDOFF_DIR/workflow_status.txt"
 
 # Function to log messages
 log_message() {
     local message="$1"
-    echo "$message"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" >> "$HOST_HANDOFF_DIR/workflow_log.txt"
+    log_info "$message"
 }
 
 # Function to generate handoff summary prompt
@@ -254,6 +314,14 @@ run_prompt_with_handoff() {
     log_message "=================================="
     log_message "Conversation $conversation_num"
     log_message "=================================="
+    if [ "$is_handoff_continuation" = "true" ] && [ -n "$previous_handoff" ]; then
+        log_info "Conversation $conversation_num will include context from previous handoff"
+    else
+        log_info "Conversation $conversation_num will start without prior handoff context"
+    fi
+
+    log_info "Prompt length: ${#prompt_text} characters"
+    log_info "Conversation output will be written to $conversation_output_file"
 
     # Build the full prompt with context if needed
     local full_prompt=""
@@ -276,11 +344,11 @@ $prompt_text"
     fi
 
     # Execute using SDK mode (no TTY needed)
-    log_message "Starting new conversation..."
+    log_info "Starting new conversation inside container"
     echo "$full_prompt" | docker exec -i "$CONTAINER_NAME" bash -c \
         "cd /workspace && claude -p --model=opus --dangerously-skip-permissions" | tee "$conversation_output_file"
 
-    log_message "Conversation $conversation_num completed"
+    log_info "Conversation $conversation_num completed"
 
     LAST_CONVERSATION_OUTPUT_FILE="$conversation_output_file"
 }
@@ -292,17 +360,23 @@ PREVIOUS_HANDOFF=""
 FIRST_PROMPT=""
 LAST_CONVERSATION_OUTPUT_FILE=""
 
+log_stage "Beginning prompt execution workflow"
+
 for i in "${!PROMPTS[@]}"; do
     prompt="${PROMPTS[$i]}"
+    prompt_index=$((i + 1))
+    log_info "Processing prompt ${prompt_index}/${#PROMPTS[@]}"
 
     # Save first prompt for initial task
     if [ $CONVERSATION_NUM -eq 1 ] && [ -z "$FIRST_PROMPT" ]; then
         FIRST_PROMPT="$prompt"
         echo "$FIRST_PROMPT" > "$HOST_HANDOFF_DIR/initial_task.txt"
+        log_info "Recorded initial task to $HOST_HANDOFF_DIR/initial_task.txt"
     fi
 
     # Check if this is a /compact command
     if [[ "$prompt" == "/compact"* ]]; then
+        log_stage "Encountered /compact directive at prompt ${prompt_index}"
         # Process any accumulated prompts before the compact
         if [ ${#CURRENT_CONVERSATION_PROMPTS[@]} -gt 0 ]; then
             # Combine prompts for this conversation
@@ -327,12 +401,15 @@ for i in "${!PROMPTS[@]}"; do
 
             # Capture handoff from actual Claude output
             HANDOFF_FILE="$HOST_HANDOFF_DIR/prompt_${CONVERSATION_NUM}_handoff.txt"
+            log_info "Extracting handoff summary for conversation $CONVERSATION_NUM to $HANDOFF_FILE"
             write_handoff_from_output "$LAST_CONVERSATION_OUTPUT_FILE" "$HANDOFF_FILE"
             PREVIOUS_HANDOFF=$(cat "$HANDOFF_FILE")
+            log_info "Handoff summary for conversation $CONVERSATION_NUM captured (${#PREVIOUS_HANDOFF} characters)"
 
             # Reset for next conversation
             CURRENT_CONVERSATION_PROMPTS=()
             CONVERSATION_NUM=$((CONVERSATION_NUM + 1))
+            log_stage "Advancing to conversation $CONVERSATION_NUM"
         fi
 
         # Check if there's text after /compact
@@ -340,10 +417,12 @@ for i in "${!PROMPTS[@]}"; do
         rest="${rest# }"  # Remove leading space if present
         if [ -n "$rest" ]; then
             CURRENT_CONVERSATION_PROMPTS+=("$rest")
+            log_info "Queued trailing prompt content after /compact"
         fi
     else
         # Regular prompt - add to current conversation
         CURRENT_CONVERSATION_PROMPTS+=("$prompt")
+        log_info "Queued prompt content for current conversation (${#CURRENT_CONVERSATION_PROMPTS[@]} item(s) queued)"
     fi
 done
 
@@ -366,18 +445,19 @@ if [ ${#CURRENT_CONVERSATION_PROMPTS[@]} -gt 0 ]; then
     fi
 
     HANDOFF_FILE="$HOST_HANDOFF_DIR/prompt_${CONVERSATION_NUM}_handoff.txt"
+    log_info "Extracting handoff summary for conversation $CONVERSATION_NUM to $HANDOFF_FILE"
     write_handoff_from_output "$LAST_CONVERSATION_OUTPUT_FILE" "$HANDOFF_FILE"
     PREVIOUS_HANDOFF=$(cat "$HANDOFF_FILE")
+    log_info "Handoff summary for conversation $CONVERSATION_NUM captured (${#PREVIOUS_HANDOFF} characters)"
 fi
 
 # Update final status
 echo "COMPLETED: $(date)" >> "$HOST_HANDOFF_DIR/workflow_status.txt"
+log_info "Workflow status updated to COMPLETED"
 
-log_message ""
-log_message "=================================="
+log_stage "Run summary"
 log_message "All prompts processed successfully!"
-log_message "=================================="
 log_message "Total conversations: $CONVERSATION_NUM"
-log_message ""
+log_message "Conversation transcripts are saved as $HOST_HANDOFF_DIR/conversation_<n>_output.txt"
 log_message "Handoff files saved in: $HOST_HANDOFF_DIR"
-log_message "View logs: cat $HOST_HANDOFF_DIR/workflow_log.txt"
+log_message "View logs with: cat $HOST_HANDOFF_DIR/workflow_log.txt"
