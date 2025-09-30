@@ -403,7 +403,7 @@ EOF"
     log_with_timestamp "⚡ Claude is processing stage $stage_name..."
     local claude_start_time=$(date +%s)
     retry_claude_operation "Claude stage execution for $stage_name" \
-        "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/stage_prompt.txt | claude -p --model=opus --dangerously-skip-permissions' | tee '$stage_output_file'"
+        "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/stage_prompt.txt | claude -p --model=claude-sonnet-4-5-20250929 --dangerously-skip-permissions' | tee '$stage_output_file'"
     local stage_exit_code=$?
     local claude_end_time=$(date +%s)
     local claude_duration=$((claude_end_time - claude_start_time))
@@ -438,7 +438,7 @@ EOF"
     log_with_timestamp "🔄 Requesting handoff summary from Claude..."
     
     retry_claude_operation "Claude handoff generation for $stage_name" \
-        "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/handoff_prompt.txt | claude -p --model=opus --dangerously-skip-permissions' | tee '$raw_handoff_file'"
+        "docker exec '$CONTAINER_NAME' bash -c 'cd /workspace && cat /tmp/handoff_prompt.txt | claude -p --model=claude-sonnet-4-5-20250929 --dangerously-skip-permissions' | tee '$raw_handoff_file'"
     local handoff_end_time=$(date +%s)
     local handoff_duration=$((handoff_end_time - handoff_start_time))
 

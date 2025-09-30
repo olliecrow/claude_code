@@ -24,6 +24,11 @@ log_event() {
     printf '%s\n' "$formatted"
 
     if [ -n "$WORKFLOW_LOG_FILE" ]; then
+        local log_dir
+        log_dir="$(dirname "$WORKFLOW_LOG_FILE")"
+        if [ ! -d "$log_dir" ]; then
+            mkdir -p "$log_dir"
+        fi
         printf '%s\n' "$formatted" >> "$WORKFLOW_LOG_FILE"
     else
         EARLY_LOG_BUFFER+=("$formatted")
@@ -211,9 +216,15 @@ for index in "${!PROMPTS[@]}"; do
     log_info "Prompt $prompt_number (${prompt_chars} chars): $prompt_preview"
 done
 
-# Ensure python3 is available for JSON parsing
-if ! command -v python3 >/dev/null 2>&1; then
-    log_error "python3 is required but was not found on PATH"
+# Determine Python interpreter for JSON parsing
+PYTHON_CMD=""
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_CMD="python3"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_CMD="python"
+    log_warn "python3 not found; falling back to python"
+else
+    log_error "python3 or python is required but neither was found on PATH"
     exit 1
 fi
 
@@ -303,6 +314,15 @@ log_message() {
     log_info "$message"
 }
 
+ensure_handoff_dir() {
+    if [ -z "$HOST_HANDOFF_DIR" ]; then
+        return
+    fi
+    if [ ! -d "$HOST_HANDOFF_DIR" ]; then
+        mkdir -p "$HOST_HANDOFF_DIR"
+    fi
+}
+
 # Function to generate handoff summary prompt
 generate_handoff_prompt() {
     echo "Generate a comprehensive handoff summary of everything done in this conversation.
@@ -335,7 +355,7 @@ extract_json_field() {
     local json_file="$1"
     local field_name="$2"
 
-    python3 - "$json_file" "$field_name" <<'PY'
+    "$PYTHON_CMD" - "$json_file" "$field_name" <<'PY'
 import json
 import sys
 
@@ -373,6 +393,8 @@ start_conversation() {
     local session_file="$4"
     local previous_handoff="$5"
 
+    ensure_handoff_dir
+
     local full_prompt="$prompt_text"
     if [ -n "$previous_handoff" ]; then
         full_prompt="Previous conversation summary:
@@ -396,12 +418,13 @@ $prompt_text"
 
     log_stage "Conversation $conversation_num: starting initial turn"
     if ! echo "$full_prompt" | docker exec -i "$CONTAINER_NAME" bash -c \
-        "cd /workspace && claude -p --model=opus --dangerously-skip-permissions --output-format json" | tee "$json_temp"; then
+        "cd /workspace && claude -p --model=claude-sonnet-4-5-20250929 --dangerously-skip-permissions --output-format json" | tee "$json_temp"; then
         log_error "Claude CLI returned an error for conversation $conversation_num initial prompt"
         rm -f "$json_temp"
         exit 1
     fi
 
+    ensure_handoff_dir
     cp "$json_temp" "$prompt_output_file"
     LAST_PROMPT_OUTPUT_FILE="$prompt_output_file"
 
@@ -438,6 +461,8 @@ continue_conversation() {
     local response_label="$5"
     local prompt_index="$6"
 
+    ensure_handoff_dir
+
     local preview=$(echo "$prompt_text" | head -c 100)
     log_message "Conversation $conversation_num - prompt $prompt_index length ${#prompt_text} characters"
     if [ ${#prompt_text} -gt 100 ]; then
@@ -452,12 +477,13 @@ continue_conversation() {
 
     log_info "Conversation $conversation_num: continuing with session $session_id for prompt $prompt_index"
     if ! echo "$prompt_text" | docker exec -i "$CONTAINER_NAME" bash -c \
-        'cd /workspace && claude -p --model=opus --dangerously-skip-permissions --resume "$1"' _ "$session_id" | tee "$response_temp"; then
+        'cd /workspace && claude -p --model=claude-sonnet-4-5-20250929 --dangerously-skip-permissions --resume "$1"' _ "$session_id" | tee "$response_temp"; then
         log_error "Claude CLI returned an error while continuing conversation $conversation_num"
         rm -f "$response_temp"
         exit 1
     fi
 
+    ensure_handoff_dir
     cp "$response_temp" "$per_prompt_file"
     LAST_PROMPT_OUTPUT_FILE="$per_prompt_file"
     append_response_to_conversation_log "$conversation_output_file" "$response_label" "$response_temp"
@@ -477,6 +503,7 @@ execute_conversation() {
 
     log_stage "Conversation $conversation_num: executing ${#conversation_prompts[@]} prompt(s)"
 
+    ensure_handoff_dir
     local conversation_output_file="$HOST_HANDOFF_DIR/conversation_${conversation_num}_output.txt"
     : > "$conversation_output_file"
     local session_file="$HOST_HANDOFF_DIR/conversation_${conversation_num}_session.txt"
@@ -504,6 +531,7 @@ execute_conversation() {
     continue_conversation "$summary_prompt" "$conversation_num" "$session_id" "$conversation_output_file" "Handoff Summary" "handoff"
 
     local handoff_file="$HOST_HANDOFF_DIR/prompt_${conversation_num}_handoff.txt"
+    ensure_handoff_dir
     log_info "Extracting handoff summary for conversation $conversation_num to $handoff_file"
     write_handoff_from_output "$LAST_PROMPT_OUTPUT_FILE" "$handoff_file"
     PREVIOUS_HANDOFF=$(cat "$handoff_file")
