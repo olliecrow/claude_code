@@ -1,6 +1,6 @@
 # Claude Code Container
 
-Docker runtime tuned for Claude Code with host isolation. Defaults to the Opus model and runs with `--dangerously-skip-permissions`.
+Docker runtime tuned for Claude Code with host isolation. Uses Claude Sonnet 4.5 (claude-sonnet-4-5-20250929) and runs with `--dangerously-skip-permissions`.
 
 ## Highlights
 - Security layers block Git (APT pin + wrapper) and confine caches to `/tmp`.
