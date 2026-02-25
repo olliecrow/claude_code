@@ -81,3 +81,4 @@ Run a single prompt headlessly:
 - `agents/README.md`: agent asset usage
 - `commands/README.md`: command asset usage
 - `docs/`: reference/source material used by this repo
+- `docs/project-preferences.md`: durable project maintenance preferences
