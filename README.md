@@ -1,43 +1,83 @@
-# Claude Code
+# claude_code
 
-Toolkit for running Claude Code and Codex CLI with ready-made agents, commands, containers, hooks, and research notes.
+`claude_code` is a practical toolkit for running Claude Code and Codex-oriented workflows with reusable agents, commands, container runtimes, and automation helpers.
 
-## Structure
-- `agents/` Ready-to-copy subagents; see `agents/README.md`.
-- `commands/` Slash commands that pair with the agents; see `commands/README.md`.
-- `container/` Hardened Claude Code container with helper scripts (`run.sh`, `run_command.sh`, `run_sequence_*`).
-- `codex_container_example/` Minimal Codex CLI container for autonomous runs.
-- `hooks/` Automation hooks such as `multiworkflow.py` for staged `/plan` flows.
-- `plan/` Backlog, experiments, permission research, and run artifacts.
-- `.claude/` Workspace for hook state during local runs.
-- `update_from_personal.sh` Sync script for pulling local Claude assets into the repo.
+## Project Aim
 
-## Start Here
-- Build or run the container from `container/README.md`.
-- Copy selected agents into `~/.claude/agents/` and commands into `~/.claude/commands/`.
-- Drop `hooks/multiworkflow.py` into `~/.claude/hooks/` if automated planning is needed.
-- Launch Claude Code or Codex CLI, then use `/agents` and `/` to verify install.
+Make local agent workflows repeatable and fast by packaging:
 
-## Usage Notes
-- Create `CLAUDE.md` in each project root.
-- Integrate with an IDE via Anthropic’s docs if desired.
-- Use `/model` to switch models and `/resume` to pick up past chats.
-- Request indexes for large repos, target files with `@`, and stash notes with `#`.
-- Double-tap `Esc` to return focus to the chat pane.
+- containerized runtime scripts
+- reusable agent/command definitions
+- automation hooks and sequence runners
+- reference documentation snapshots
 
-## Monitor Usage
-- Historical: https://github.com/ryoppippi/ccusage
-- Realtime: https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor
+## What This Repository Does
 
-## Planning and Research
-- `plan/comprehensive_solution.md` outlines the permission bypass strategy.
-- `plan/run_command_analysis.md` and `plan/run_scripts_consistency_check.md` cover command behaviour studies.
-- `plan/backlog`, `plan/current`, `plan/complete`, `plan/experiments`, `plan/research`, `plan/scratch`, and `plan/artifacts/` keep ongoing work organised.
+- provides hardened container scripts in `container/`
+- includes reusable agent and slash-command assets (`agents/`, `commands/`)
+- includes workflow hooks (`hooks/`) and sequence scripts
+- tracks supporting docs and research notes (`docs/`, `plan/`)
 
-## Handy Aliases
+## Requirements
+
+- Docker
+- shell environment with `bash`
+- Claude Code CLI access (or compatible local setup)
+- optional: Node.js for external usage tools such as `ccusage`
+
+## Authentication
+
+Container scripts can reuse local Claude authentication state. Depending on your setup:
+
+- you may authenticate interactively on first run
+- or provide `ANTHROPIC_API_KEY` when using API-key-based flows
+
+## Quick Start
+
+Build the container:
+
+```bash
+./container/build.sh
 ```
-alias ccc="{path_to_repo}/container/run.sh"
-alias ccs="{path_to_repo}/container/run_sequence_handoff.sh"
-alias ccu="npx --yes ccusage@latest"
-alias ccm="claude-monitor"
+
+Launch Claude Code against a project:
+
+```bash
+./container/run.sh /path/to/project
 ```
+
+Run a single prompt headlessly:
+
+```bash
+./container/run_command.sh /path/to/project "your prompt"
+```
+
+## Getting Started
+
+1. Build the container image.
+2. Run against a target project path.
+3. Copy selected agents/commands into your local Claude config if needed.
+4. Use sequence runners for multi-prompt workflows.
+
+## Local State and Directory Layout
+
+- `container/`: build + run scripts and container runtime utilities
+- `agents/`: reusable agent definitions
+- `commands/`: reusable slash commands
+- `hooks/`: hook scripts for workflow orchestration
+- `docs/`: reference docs snapshots and notes
+- `plan/`: short-lived planning and experiment notes
+
+## Logging and Debugging
+
+- runtime logs stream to terminal from `container/run*.sh`
+- use `./container/run.sh /path/to/project --shell` for manual debugging inside container
+- verify environment/auth state before long headless runs
+
+## Documentation Map
+
+- `README.md`: human-facing project overview
+- `container/README.md`: container setup and runtime behavior
+- `agents/README.md`: agent asset usage
+- `commands/README.md`: command asset usage
+- `docs/`: reference/source material used by this repo
