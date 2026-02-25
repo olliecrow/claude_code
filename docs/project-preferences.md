@@ -28,4 +28,5 @@ These preferences define how `claude_code` should be maintained as an open-sourc
 ## Collaboration Preferences
 
 - Preserve accurate author/committer attribution for each contributor.
+- Prefer commit author identities tied to genuine human GitHub accounts, not fabricated bot names/emails.
 - Avoid destructive history rewrites unless required for secret/confidentiality remediation.
