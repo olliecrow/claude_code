@@ -54,7 +54,7 @@ Doctor summary.
 ```text
 claude_code container doctor
 [ok] tool docker: /usr/local/bin/docker
-[ok] host claude auth dir: /Users/you/.claude
+[ok] host claude auth dir: $HOME/.claude
 doctor result: PASS
 ```
 
