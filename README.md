@@ -107,5 +107,5 @@ Container scripts reuse your local Claude authentication state.
 - `container/README.md`: container setup and runtime behavior
 - `agents/README.md`: agent asset usage
 - `commands/README.md`: command asset usage
-- `docs/`: reference and source material
+- `docs/README.md`: docs index and routing
 - `docs/project-preferences.md`: durable project maintenance preferences
