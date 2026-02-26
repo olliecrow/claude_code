@@ -26,6 +26,13 @@ docker build --pull --no-cache -t claude_code_container .
 ```
 First launch may prompt for login; later runs reuse the stored session.
 
+Preflight and dry-run helpers:
+```
+./doctor.sh
+./dry_run.sh /path/to/project
+./dry_run.sh /path/to/project --shell
+```
+
 ## Prompt Sequences
 - `run_sequence_prompts.sh` reads prompts separated by blank lines.
 - `/compact` triggers a handoff to a fresh conversation.

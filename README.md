@@ -34,6 +34,45 @@ Run a single prompt headlessly.
 ./container/run_command.sh /path/to/project "your prompt"
 ```
 
+Run preflight checks before launching long sessions.
+
+```bash
+./container/doctor.sh
+```
+
+Preview the full run flow without starting Docker.
+
+```bash
+./container/dry_run.sh /path/to/project
+./container/dry_run.sh /path/to/project --shell
+```
+
+## Example output
+
+Doctor summary.
+
+```text
+claude_code container doctor
+[ok] tool docker: /usr/local/bin/docker
+[ok] host claude auth dir: /Users/you/.claude
+doctor result: PASS
+```
+
+Dry-run summary.
+
+```text
+claude_code container dry-run
+repo: /path/to/project
+mode: launch claude
+planned sequence:
+1. Validate local prerequisites.
+2. Merge container settings.
+3. Start detached container and mounts.
+4. Launch Claude or shell.
+5. Remove container and restore settings.
+dry-run only: no Docker commands were executed.
+```
+
 ## Requirements
 
 - Docker
