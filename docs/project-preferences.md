@@ -23,6 +23,7 @@ These preferences define how `claude_code` should be maintained as an open-sourc
 ## Verification Expectations
 
 - Run relevant checks for changed scripts/docs/assets before merge.
+- For container runtime changes, run `./container/doctor.sh` and relevant `./container/dry_run.sh` previews before merge.
 - Include concise verification evidence in PR descriptions when practical.
 
 ## Collaboration Preferences
