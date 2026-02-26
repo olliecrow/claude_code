@@ -1,84 +1,72 @@
 # claude_code
 
-`claude_code` is a practical toolkit for running Claude Code and Codex-oriented workflows with reusable agents, commands, container runtimes, and automation helpers.
+`claude_code` is a practical toolkit for Claude Code workflows.
+It gives you container scripts, reusable agents, reusable commands, and automation helpers.
 
-## Project Aim
+## What this project is trying to achieve
 
-Make local agent workflows repeatable and fast by packaging:
+Make local agent workflows fast and repeatable.
 
-- containerized runtime scripts
-- reusable agent/command definitions
-- automation hooks and sequence runners
-- reference documentation snapshots
+## What you experience as a user
 
-## What This Repository Does
+1. You build the runtime container once.
+2. You run Claude Code against any local project path.
+3. You reuse agents and commands from this repo in your own setup.
+4. You run scripted sequences for repeatable multi-step workflows.
 
-- provides hardened container scripts in `container/`
-- includes reusable agent and slash-command assets (`agents/`, `commands/`)
-- includes workflow hooks (`hooks/`) and sequence scripts
-- tracks supporting docs and research notes (`docs/`, `plan/`)
+## Quick start
 
-## Requirements
-
-- Docker
-- shell environment with `bash`
-- Claude Code CLI access (or compatible local setup)
-- optional: Node.js for external usage tools such as `ccusage`
-
-## Authentication
-
-Container scripts can reuse local Claude authentication state. Depending on your setup:
-
-- you may authenticate interactively on first run
-- or provide `ANTHROPIC_API_KEY` when using API-key-based flows
-
-## Quick Start
-
-Build the container:
+Build the container.
 
 ```bash
 ./container/build.sh
 ```
 
-Launch Claude Code against a project:
+Run Claude Code against a project path.
 
 ```bash
 ./container/run.sh /path/to/project
 ```
 
-Run a single prompt headlessly:
+Run a single prompt headlessly.
 
 ```bash
 ./container/run_command.sh /path/to/project "your prompt"
 ```
 
-## Getting Started
+## Requirements
 
-1. Build the container image.
-2. Run against a target project path.
-3. Copy selected agents/commands into your local Claude config if needed.
-4. Use sequence runners for multi-prompt workflows.
+- Docker
+- shell environment with `bash`
+- Claude Code CLI access, or a compatible local setup
+- optional Node.js for external tools like `ccusage`
 
-## Local State and Directory Layout
+## Authentication
 
-- `container/`: build + run scripts and container runtime utilities
+Container scripts reuse your local Claude authentication state.
+
+- You can authenticate interactively on first run.
+- You can use `ANTHROPIC_API_KEY` for API key based flows.
+
+## Helpful tips
+
+- Use `./container/run.sh /path/to/project --shell` for manual debugging inside the container.
+- Check environment and auth state before long headless runs.
+
+## Directory layout
+
+- `container/`: build and run scripts, runtime utilities
 - `agents/`: reusable agent definitions
 - `commands/`: reusable slash commands
 - `hooks/`: hook scripts for workflow orchestration
 - `docs/`: reference docs snapshots and notes
-- `plan/`: short-lived planning and experiment notes
+- `plan/`: short lived planning and experiment notes
 
-## Logging and Debugging
-
-- runtime logs stream to terminal from `container/run*.sh`
-- use `./container/run.sh /path/to/project --shell` for manual debugging inside container
-- verify environment/auth state before long headless runs
-
-## Documentation Map
+## Documentation map
 
 - `README.md`: human-facing project overview
 - `container/README.md`: container setup and runtime behavior
 - `agents/README.md`: agent asset usage
 - `commands/README.md`: command asset usage
-- `docs/`: reference/source material used by this repo
+- `docs/`: reference and source material
 - `docs/project-preferences.md`: durable project maintenance preferences
