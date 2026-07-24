@@ -1,13 +1,5 @@
-# Docs Directory
+# Project documentation
 
-This directory holds long-lived documentation for `claude_code`.
+User setup and examples live in the root [README](../README.md). Durable design and maintenance rationale lives in [decisions.md](decisions.md).
 
-## Entry points
-
-- `docs/project-preferences.md`: durable maintenance, security, and verification preferences.
-
-## Usage notes
-
-- Keep user-facing onboarding in the repository root `README.md`.
-- Keep durable process and maintenance guidance in `docs/`.
-- Treat all docs as public-facing by default. Do not include secrets or private machine details.
+Treat every committed document as public. Keep temporary investigations and generated handoffs out of this directory.

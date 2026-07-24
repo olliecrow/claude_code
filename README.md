@@ -1,126 +1,93 @@
-# claude_code
+# Claude Code workflow toolkit
 
-`claude_code` is a practical toolkit for Claude Code workflows.
-It gives you container scripts, reusable agents, reusable commands, and automation helpers.
-
-## What this project is trying to achieve
-
-Make local agent workflows fast and repeatable.
-
-## What you experience as a user
-
-1. You build the runtime container once.
-2. You run Claude Code against any local project path.
-3. You reuse agents and commands from this repo in your own setup.
-4. You run scripted sequences for repeatable multi-step workflows.
+This repository contains a Docker runtime, reusable agents, slash commands, and a sequential prompt runner for Claude Code.
 
 ## Quick start
 
-Build the container.
+Requirements:
+
+- Docker
+- Bash
+- Claude Code configuration in `~/.claude`
+- authentication usable inside Docker
+
+macOS stores an ordinary Claude Code login in Keychain, which a Linux container cannot read. For a Claude subscription, create a long-lived token and keep it in your shell’s secure environment:
+
+```bash
+claude setup-token
+export CLAUDE_CODE_OAUTH_TOKEN=...
+```
+
+API users can instead set `ANTHROPIC_API_KEY`. Linux users with `~/.claude/.credentials.json` do not need either environment variable.
+
+Build the image and check the local setup.
 
 ```bash
 ./container/build.sh
-```
-
-Run Claude Code against a project path.
-
-```bash
-./container/run.sh /path/to/project
-```
-
-Run a single prompt headlessly.
-
-```bash
-./container/run_command.sh /path/to/project "your prompt"
-```
-
-Run preflight checks before launching long sessions.
-
-```bash
 ./container/doctor.sh
 ```
 
-Preview the full run flow without starting Docker.
+Preview a run without starting a container.
 
 ```bash
 ./container/dry_run.sh /path/to/project
-./container/dry_run.sh /path/to/project --shell
 ```
 
-## Example output
+Start Claude Code or an interactive shell.
 
-Doctor summary.
-
-```text
-claude_code container doctor
-[ok] tool docker: /usr/local/bin/docker
-[ok] host claude auth dir: $HOME/.claude
-doctor result: PASS
+```bash
+./container/run.sh /path/to/project
+./container/run.sh /path/to/project --shell
 ```
 
-Dry-run summary.
+Run one non-interactive prompt.
 
-```text
-claude_code container dry-run
-repo: /path/to/project
-mode: launch claude
-planned sequence:
-1. Validate local prerequisites.
-2. Merge container settings.
-3. Start detached container and mounts.
-4. Launch Claude or shell.
-5. Remove container and restore settings.
-dry-run only: no Docker commands were executed.
+```bash
+./container/run_command.sh /path/to/project "run the tests and explain any failures"
 ```
 
-## Requirements
+Run prompts from a file. Separate prompts with blank lines. A `/compact` block starts a fresh conversation with a generated handoff.
 
-- Docker
-- shell environment with `bash`
-- Claude Code CLI access, or a compatible local setup
-- optional Node.js for external tools like `ccusage`
+```bash
+./container/run_sequence_prompts.sh /path/to/project /path/to/prompts.txt
+```
 
-## Authentication
+## Security boundary
 
-Container scripts reuse your local Claude authentication state.
+Use the container only with projects and prompts you trust.
 
-- You can authenticate interactively on first run.
-- You can use `ANTHROPIC_API_KEY` for API key based flows.
+- The project and `~/.claude` are mounted read-write.
+- The container has internet access.
+- Claude runs with permission checks bypassed.
+- Auth environment variables are visible to local Docker inspection while the container runs.
+- Common Git commands are blocked, but this is a guardrail rather than a complete security boundary.
 
-## Helpful tips
+The container limits ordinary filesystem access to its own filesystem and the mounted paths. It does not protect mounted credentials or project data from code or commands run inside it.
 
-- Use `./container/run.sh /path/to/project --shell` for manual debugging inside the container.
-- Check environment and auth state before long headless runs.
+## Reusable assets
 
-## Directory layout
+- Copy files from `agents/` to `~/.claude/agents/`.
+- Copy files from `commands/` to `~/.claude/commands/`.
 
-- `container/`: build and run scripts, runtime utilities
-- `agents/`: reusable agent definitions
-- `commands/`: reusable slash commands
-- `hooks/`: hook scripts for workflow orchestration
-- `docs/`: reference docs snapshots and notes
-- `plan/`: short lived planning and experiment notes
+See [agents/README.md](agents/README.md) and [commands/README.md](commands/README.md).
 
-## Documentation map
+## Repository layout
 
-- `README.md`: human-facing project overview
-- `container/README.md`: container setup and runtime behavior
-- `agents/README.md`: agent asset usage
-- `commands/README.md`: command asset usage
-- `docs/README.md`: docs index and routing
-- `docs/project-preferences.md`: durable project maintenance preferences
+- `container/`: image and runtime scripts
+- `agents/`: Claude Code subagent definitions
+- `commands/`: Claude Code slash commands
+- `docs/`: durable project decisions
+- `scripts/`: repository checks and public-safety checks
 
-## Third-Party Dependency Trust Policy
-- Prefer official packages, libraries, SDKs, frameworks, and services from authoritative sources.
-- Prefer options that are reputable, well-maintained, popular, and well-supported.
-- Before adopting or upgrading third-party dependencies, verify ownership/publisher authenticity, maintenance activity, security history, license fit, and ecosystem adoption.
-- Avoid low-trust, obscure, or weakly maintained dependencies when a stronger alternative exists.
-- Pin versions and keep lockfiles current for reproducibility and supply-chain safety.
-- If trust signals are unclear, do not adopt the dependency until explicitly approved.
+Generated handoffs use the ignored `plan/handoffs/` directory in the target project.
 
-<!-- third-party-policy:start -->
-## Third-Party Code Policy
-This repository allows external-code snapshots for static analysis only. External clones must stay in ephemeral `plan/` locations, be sanitized immediately (`rm -rf .git`, or remove all remotes first if `.git` is temporarily retained), and must never be executed.
+## Development
 
-See `docs/untrusted-third-party-repos.md`.
-<!-- third-party-policy:end -->
+Run the local gate before committing.
+
+```bash
+./scripts/check.sh
+pre-commit run --all-files
+```
+
+Security reports belong in [SECURITY.md](SECURITY.md). The project is licensed under [Apache License 2.0](LICENSE).

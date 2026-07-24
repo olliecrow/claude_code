@@ -1,77 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/claude_common_lib.sh"
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=container/claude_common_lib.sh
+source "$script_directory/claude_common_lib.sh"
 
-usage() {
-  cat <<EOF
-Usage:
-  $(basename "$0")
-
-Description:
-  Run non-mutating preflight checks for the Claude Code container workflow.
-EOF
-}
-
-if [[ $# -ne 0 ]]; then
-  usage
-  exit 1
+if [[ "$#" -ne 0 ]]; then
+    echo "Usage: $(basename "$0")" >&2
+    exit 1
 fi
 
-exit_code=0
+failed=0
 
-report_ok() {
-  local name="$1"
-  local detail="$2"
-  echo "[ok] $name: $detail"
-}
+check() {
+    local label="$1"
+    shift
 
-report_fail() {
-  local name="$1"
-  local detail="$2"
-  echo "[fail] $name: $detail"
-  exit_code=1
-}
-
-check_tool() {
-  local tool="$1"
-  if path="$(command -v "$tool" 2>/dev/null)"; then
-    report_ok "tool $tool" "$path"
-  else
-    report_fail "tool $tool" "not found in PATH"
-  fi
+    if "$@" >/dev/null 2>&1; then
+        echo "[ok] $label"
+    else
+        echo "[fail] $label"
+        failed=1
+    fi
 }
 
 echo "claude_code container doctor"
-echo
+check "docker command" command -v docker
+check "Docker daemon" docker info
+check "claude_code_container image" docker image inspect claude_code_container
+check "host Claude configuration" test -d "$HOME/.claude"
+check "container-usable Claude authentication" has_container_auth
 
-check_tool docker
-
-if check_claude_auth >/dev/null 2>&1; then
-  report_ok "host claude auth dir" "$HOME/.claude"
-else
-  report_fail "host claude auth dir" "missing, run claude login on host first"
+if [[ "$failed" -ne 0 ]]; then
+    echo "doctor result: FAIL"
+    exit 1
 fi
 
-if docker info >/dev/null 2>&1; then
-  report_ok "docker daemon" "reachable"
-else
-  report_fail "docker daemon" "unreachable, start Docker and retry"
-fi
-
-if docker image inspect claude_code_container >/dev/null 2>&1; then
-  report_ok "image claude_code_container" "present"
-else
-  report_fail "image claude_code_container" "missing, run ./container/build.sh"
-fi
-
-if [[ "$exit_code" -eq 0 ]]; then
-  echo
-  echo "doctor result: PASS"
-  exit 0
-fi
-
-echo
-echo "doctor result: FAIL"
-exit 1
+echo "doctor result: PASS"

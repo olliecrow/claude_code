@@ -1,6 +1,5 @@
-.*
-.git*
-.git/
-!pyproject.toml
+*
 !Dockerfile
+!pyproject.toml
+!uv.lock
 !.dockerignore
