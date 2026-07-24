@@ -1,114 +1,73 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Claude Code Terminal Container - Automated Command Execution
-# Uses your Mac's global Claude authentication for all projects
-# Executes natural language prompts via Claude Code in container
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=container/claude_common_lib.sh
+source "$script_directory/claude_common_lib.sh"
 
-set -e
-
-# Source common library
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/claude_common_lib.sh"
-
-if [ $# -ne 2 ]; then
-    echo "Error: Please specify a directory and command"
-    echo "Usage: $0 /path/to/your/project \"Your natural language prompt for Claude Code\""
-    echo "Example: $0 /path/to/project \"Update the weather.md file with today's forecast\""
-    exit 1
-fi
-
-REPO_DIR="$1"
-COMMAND_PROMPT="$2"
-
-# Verify directory exists
-if ! validate_directory "$REPO_DIR"; then
-    exit 1
-fi
-
-# Get absolute path
-REPO_DIR="$(get_absolute_path "$REPO_DIR")"
-
-# Check if Claude authentication exists on Mac
-if ! check_claude_auth; then
-    exit 1
-fi
-
-echo "Using system-wide Claude authentication from Mac"
-echo "Project directory: $REPO_DIR"
-echo "Command prompt: $COMMAND_PROMPT"
-echo "Authentication: ~/.claude -> /home/dev/.claude (system-wide)"
-echo "Container will have access to repo directory only"
-
-# Detect host timezone (macOS)
-HOST_TZ="$(detect_host_timezone)"
-
-if [ -n "$HOST_TZ" ]; then
-    echo "Host timezone detected: $HOST_TZ"
-else
-    echo "Warning: Could not detect host timezone, container will use UTC"
-fi
-
-echo ""
-
-# Source shared settings library
-source "$SCRIPT_DIR/claude_settings_lib.sh"
-
-# Setup container settings
-setup_container_settings "$REPO_DIR"
-
-# Function to cleanup container and settings
-cleanup() {
-    echo "Cleaning up container..."
-    docker rm -f "$CONTAINER_NAME" > /dev/null 2>&1 || true
-    restore_settings_json
-    echo "Cleanup completed."
+usage() {
+    echo "Usage: $(basename "$0") /path/to/project \"prompt\""
 }
 
-# Ensure cleanup on any exit, including crashes and timeouts
-trap cleanup EXIT
-
-# Start container in detached mode first
-CONTAINER_NAME="claude_code_command_$(basename "$REPO_DIR")_$$"
-echo "Starting container: $CONTAINER_NAME"
-
-docker run -d \
-    --name "$CONTAINER_NAME" \
-    --mount type=bind,source="$REPO_DIR",target=/workspace \
-    --mount type=bind,source="$HOME/.claude",target=/home/dev/.claude \
-    $(get_base_docker_env_args) \
-    ${HOST_TZ:+--env TZ="$HOST_TZ"} \
-    claude_code_container tail -f /dev/null
-
-# Execute Claude Code with the command prompt (90-minute timeout using background process)
-echo "Executing Claude Code with prompt..."
-
-# Start the command in background and capture its PID
-docker exec "$CONTAINER_NAME" bash -c "cd /workspace && claude --model=claude-sonnet-4-5-20250929 --dangerously-skip-permissions \"$COMMAND_PROMPT\"" &
-COMMAND_PID=$!
-
-# Wait for the command with 90-minute timeout
-TIMEOUT=5400  # 90 minutes
-ELAPSED=0
-SLEEP_INTERVAL=5
-
-while kill -0 $COMMAND_PID 2>/dev/null; do
-    if [ $ELAPSED -ge $TIMEOUT ]; then
-        echo "Command timed out after 90 minutes, killing process..."
-        kill $COMMAND_PID 2>/dev/null || true
-        wait $COMMAND_PID 2>/dev/null || true
-        exit 124
-    fi
-    sleep $SLEEP_INTERVAL
-    ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
-done
-
-# Wait for the command to complete and get exit code
-wait $COMMAND_PID
-exit_code=$?
-
-if [ $exit_code -ne 0 ]; then
-    echo "Command failed with exit code $exit_code"
-    exit $exit_code
+if [[ "$#" -ne 2 ]]; then
+    usage >&2
+    exit 1
 fi
 
-echo "Command execution completed."
+project_directory="$1"
+prompt="$2"
+timeout_seconds="${CLAUDE_TIMEOUT_SECONDS:-5400}"
+
+if [[ -z "${prompt//[[:space:]]/}" ]]; then
+    echo "Error: prompt must not be empty." >&2
+    exit 1
+fi
+
+if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: CLAUDE_TIMEOUT_SECONDS must be a positive integer." >&2
+    exit 1
+fi
+
+require_directory "$project_directory"
+require_claude_auth
+require_docker
+
+project_directory="$(absolute_directory "$project_directory")"
+host_timezone="$(detect_host_timezone)"
+project_name="$(safe_container_component "$(basename "$project_directory")")"
+container_name="claude_code_command_${project_name}_$$"
+
+cleanup() {
+    stop_container "$container_name"
+}
+trap cleanup EXIT
+
+print_trust_warning
+echo "Project: $project_directory"
+echo "Starting container: $container_name"
+start_claude_container "$container_name" "$project_directory" "$host_timezone" >/dev/null
+
+printf '%s\n' "$prompt" | docker exec -i -w /workspace "$container_name" \
+    claude -p --model sonnet --dangerously-skip-permissions &
+command_pid=$!
+
+elapsed_seconds=0
+poll_seconds=5
+while kill -0 "$command_pid" 2>/dev/null; do
+    if (( elapsed_seconds >= timeout_seconds )); then
+        echo "Error: Claude timed out after ${timeout_seconds} seconds." >&2
+        kill "$command_pid" 2>/dev/null || true
+        wait "$command_pid" 2>/dev/null || true
+        exit 124
+    fi
+    sleep "$poll_seconds"
+    elapsed_seconds=$((elapsed_seconds + poll_seconds))
+done
+
+if wait "$command_pid"; then
+    echo "Claude completed the prompt."
+else
+    exit_code=$?
+    echo "Error: Claude exited with status $exit_code." >&2
+    exit "$exit_code"
+fi

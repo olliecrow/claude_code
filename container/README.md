@@ -1,51 +1,48 @@
-# Claude Code Container
+# Claude Code container
 
-Docker runtime tuned for Claude Code with host isolation. Uses Claude Sonnet 4.5 (claude-sonnet-4-5-20250929) and runs with `--dangerously-skip-permissions`.
+This directory builds and runs Claude Code in a Docker container for trusted projects.
 
-## Highlights
-- Security layers block Git (APT pin + wrapper) and confine caches to `/tmp`.
-- Tooling bundle includes ripgrep, ffmpeg, sccache, Node.js, Rust, and build essentials.
-- ML stack ships OpenCV, matplotlib, data-science libs, optional minimal build via `--minimal`.
+## Authentication
+
+The container accepts `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, or a Linux `~/.claude/.credentials.json` file. A normal macOS login is stored in Keychain and is not visible inside Docker.
+
+Subscription users can run `claude setup-token`, store the result securely, and export it as `CLAUDE_CODE_OAUTH_TOKEN`. Do not put tokens in this repository or pass them as script arguments.
 
 ## Build
-```
-./build.sh            # full image
-./build.sh --minimal  # lean image
-# or
-docker build --pull --no-cache -t claude_code_container .
+
+```bash
+./build.sh
+./build.sh --minimal
 ```
 
-## Run
-```
-./run.sh /path/to/project                     # launch Claude automatically
-./run.sh /path/to/project --shell             # obtain a shell
-./run_command.sh /path/to/project "prompt"    # execute one prompt
-./run_sequence_incontext.sh /path/to/project "seed"
-./run_sequence_handoff.sh /path/to/project "seed"
-./run_sequence_prompts.sh /path/to/project /path/to/prompts.txt
-```
-First launch may prompt for login; later runs reuse the stored session.
+The full image includes native build tools, Rust, Python data tools, ffmpeg, and debugging tools. The minimal image omits the optional compiler and debugger groups.
 
-Preflight and dry-run helpers:
-```
+## Check and preview
+
+```bash
 ./doctor.sh
 ./dry_run.sh /path/to/project
 ./dry_run.sh /path/to/project --shell
 ```
 
-## Prompt Sequences
-- `run_sequence_prompts.sh` reads prompts separated by blank lines.
-- `/compact` triggers a handoff to a fresh conversation.
-- Lines starting with `#` act as comments.
+## Run
 
-## Alias Tip
-```
-alias ccc="/path_to_repo/container/run.sh"
-ccc .
+```bash
+./run.sh /path/to/project
+./run.sh /path/to/project --shell
+./run_command.sh /path/to/project "your prompt"
+./run_sequence_prompts.sh /path/to/project /path/to/prompts.txt
 ```
 
-## API Key Notes
-- Default behaviour reuses `~/.claude`; no explicit key needed.
-- Generate keys via https://console.anthropic.com/ when required.
-- On macOS: `security find-generic-password -s "Claude Code" -a "$USER" -w`.
-- Optional env export before launch: `export ANTHROPIC_API_KEY=...`.
+The prompt file format is:
+
+- blank lines separate prompts;
+- lines beginning with `#` are comments;
+- a prompt beginning with `/compact` ends the current conversation;
+- text after `/compact` becomes the first prompt in the new conversation.
+
+Handoffs and logs are written to the target project’s ignored `plan/handoffs/` directory.
+
+## Important security limits
+
+The project and `~/.claude` are mounted read-write, the container has network access, and Claude runs with permission checks bypassed. Auth environment variables remain visible to local Docker inspection until the container is removed. Use only trusted projects and prompts. Git and GitHub CLI command names are blocked to prevent common accidental changes, but the block is not a security boundary.

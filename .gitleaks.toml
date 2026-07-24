@@ -13,5 +13,5 @@ tags = ["policy", "privacy"]
 description = "Allow explicit placeholder examples used in policy/docs."
 regexTarget = "line"
 regexes = [
-  '''(/Users/(YOU|USER|username)|/home/(user|USER|username)|[A-Za-z]:\\+Users\\+(YOU|USER|USERNAME|username))'''
+  '''(/Users/(YOU|USER|you|username)|/home/(dev|user|USER|username)|[A-Za-z]:\\+Users\\+(YOU|USER|USERNAME|username))'''
 ]

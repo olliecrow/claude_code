@@ -1,17 +1,15 @@
-# Claude Code Agents
+# Claude Code agents
 
-Subagent definitions packaged for Claude Code.
+These files are standalone Claude Code subagent definitions.
 
 ## Install
-- Copy markdown files into `~/.claude/agents/`.
-- Run `/agents` inside Claude Code to confirm availability.
 
-## Use
-- Mention agent names in prompts or wire them through custom commands.
-- Combine with slash commands from `../commands` for repeatable workflows.
-- Separate context windows per agent; avoid nesting identical agents.
-- Prefer container execution from `../container` for isolation.
-- Apply frontmatter headers to constrain behaviour: https://docs.anthropic.com/en/docs/claude-code/sub-agents#file-format
+Copy the agents you want into `~/.claude/agents/`, then run `/agents` in Claude Code to confirm they are available.
 
-## Reference
-https://docs.anthropic.com/en/docs/claude-code/sub-agents
+```bash
+cp agents/code-reviewer.md ~/.claude/agents/
+```
+
+Each agent has one narrow role. The prompts keep planning and validation proportional, preserve the caller’s authority boundary, and avoid routine delegation.
+
+See the official [Claude Code subagent documentation](https://docs.anthropic.com/en/docs/claude-code/sub-agents) for file format and configuration details.

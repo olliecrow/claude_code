@@ -1,17 +1,15 @@
-# Claude Code Commands
+# Claude Code commands
 
-Slash-command presets for Claude Code.
+These files are reusable Claude Code slash commands.
 
 ## Install
-- Copy markdown files into `~/.claude/commands/`.
-- Press `/` inside Claude Code to verify availability.
 
-## Use
-- Invoke commands explicitly; auto-selection unavailable.
-- Chain `/plan` to keep execution aligned with the current task.
-- Pair commands with agents from `../agents` for richer workflows.
-- Run inside the container stack under `../container` for isolation.
-- Add frontmatter to scope behaviour: https://docs.anthropic.com/en/docs/claude-code/slash-commands#frontmatter
+Copy the commands you want into `~/.claude/commands/`, then type `/` in Claude Code to confirm they are available.
 
-## Reference
-https://docs.anthropic.com/en/docs/claude-code/slash-commands
+```bash
+cp commands/plan.md ~/.claude/commands/
+```
+
+The commands separate planning, read-only inspection, testing, verification, cleanup, and implementation so the requested authority stays clear.
+
+See the official [Claude Code slash-command documentation](https://docs.anthropic.com/en/docs/claude-code/slash-commands) for file format and configuration details.

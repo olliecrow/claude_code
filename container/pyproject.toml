@@ -2,16 +2,12 @@
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-include = []
-
 [project]
 name = "claude-code-container"
 version = "0.1.0"
-description = "Isolated Docker container for running Claude Code securely"
-requires-python = ">=3.10"
+description = "Python tools included in the Claude Code development container"
+requires-python = ">=3.12"
 dependencies = [
-    "dotenv>=0.9.9",
     "fastapi>=0.115.14",
     "ipykernel>=6.29.5",
     "ipywidgets>=8.0.0",
@@ -26,6 +22,7 @@ dependencies = [
     "plotly>=5.0.0",
     "pydantic>=2.11.5",
     "pytest>=8.3.5",
+    "python-dotenv>=1.1.0",
     "requests>=2.32.4",
     "seaborn>=0.12.0",
     "uvicorn>=0.34.3",
@@ -36,9 +33,11 @@ dev = [
     "mypy>=1.15.0",
 ]
 
+[tool.setuptools.packages.find]
+include = []
+
 [tool.ruff]
 line-length = 120
-
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]
