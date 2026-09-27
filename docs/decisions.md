@@ -14,6 +14,6 @@ Claude needs network access, project write access, and authentication state for 
 
 The README must state this boundary plainly. Do not describe the runtime as secure against malicious projects or prompts.
 
-## Current model aliases
+## Current model selection
 
-Runtime scripts use Claude Code’s `sonnet` alias instead of a dated model ID. The alias keeps the chosen model family while allowing the installed Claude Code release to resolve the current supported version.
+Runtime scripts and agent definitions select `claude-opus-5-5` explicitly. Require Claude Code 2.1.280 or later. Preserve configured effort levels; model selection does not set effort.

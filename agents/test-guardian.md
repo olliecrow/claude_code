@@ -1,7 +1,7 @@
 ---
 name: test-guardian
 description: Run and assess existing tests and quality gates without changing the implementation
-model: sonnet
+model: claude-opus-5-5
 ---
 
 # Test guardian

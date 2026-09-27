@@ -1,7 +1,7 @@
 ---
 name: edge-case-finder
 description: Identify high-value boundary and failure cases that existing behavior or tests may miss
-model: opus
+model: claude-opus-5-5
 ---
 
 # Edge-case finder

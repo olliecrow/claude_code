@@ -1,7 +1,7 @@
 ---
 name: planning-architect
 description: Create an evidence-based execution plan for a material or unfamiliar change
-model: opus
+model: claude-opus-5-5
 ---
 
 # Planning architect

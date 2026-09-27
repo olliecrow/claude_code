@@ -46,5 +46,5 @@ if [[ "$run_mode" == "--shell" ]]; then
     docker exec -it -w /workspace "$container_name" bash
 else
     docker exec -it -w /workspace "$container_name" \
-        claude --model sonnet --dangerously-skip-permissions
+        claude --model claude-opus-5-5 --dangerously-skip-permissions
 fi

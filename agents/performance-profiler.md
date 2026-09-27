@@ -1,7 +1,7 @@
 ---
 name: performance-profiler
 description: Measure and explain a performance problem before recommending an optimization
-model: sonnet
+model: claude-opus-5-5
 ---
 
 # Performance profiler

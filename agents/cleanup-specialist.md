@@ -1,7 +1,7 @@
 ---
 name: cleanup-specialist
 description: Remove confirmed stale, generated, duplicate, or temporary artifacts without harming current work
-model: sonnet
+model: claude-opus-5-5
 ---
 
 # Cleanup specialist

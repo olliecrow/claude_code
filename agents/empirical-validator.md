@@ -1,7 +1,7 @@
 ---
 name: empirical-validator
 description: Test a material claim with focused experiments and reproducible evidence
-model: sonnet
+model: claude-opus-5-5
 ---
 
 # Empirical validator
