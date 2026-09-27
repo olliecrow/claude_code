@@ -34,7 +34,7 @@ container_name="claude_code_${project_name}_<pid>"
 if [[ "$run_mode" == "--shell" ]]; then
     action="open an interactive shell"
 else
-    action="launch Claude with the sonnet alias"
+    action="launch Claude Opus 5.5"
 fi
 
 print_trust_warning

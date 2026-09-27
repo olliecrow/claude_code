@@ -1,7 +1,7 @@
 ---
 name: ai-engineer
 description: Build and improve production AI and machine-learning systems when implementation is requested
-model: opus
+model: claude-opus-5-5
 ---
 
 # AI engineer

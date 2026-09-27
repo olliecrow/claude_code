@@ -1,7 +1,7 @@
 ---
 name: large-file-reader
 description: Read a file too large for one context window with systematic coverage and traceable findings
-model: sonnet
+model: claude-opus-5-5
 ---
 
 # Large-file reader

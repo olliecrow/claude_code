@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-AGENT_MODELS = {"opus", "sonnet"}
+AGENT_MODELS = {"claude-opus-5-5"}
 FORBIDDEN_TEXT = (
     "spawn them liberally",
     "use many agents",

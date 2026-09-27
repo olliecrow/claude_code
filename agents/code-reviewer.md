@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: Review a change or codebase for correctness, security, broken contracts, and merge risk
-model: opus
+model: claude-opus-5-5
 ---
 
 # Code reviewer

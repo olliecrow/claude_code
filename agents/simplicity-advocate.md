@@ -1,7 +1,7 @@
 ---
 name: simplicity-advocate
 description: Find a smaller, clearer implementation that preserves required behavior and safety
-model: opus
+model: claude-opus-5-5
 ---
 
 # Simplicity advocate

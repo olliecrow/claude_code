@@ -167,7 +167,7 @@ run_claude_turn() {
     local json_output="$3"
     local claude_arguments=(
         -p
-        --model sonnet
+        --model claude-opus-5-5
         --dangerously-skip-permissions
         --output-format json
     )

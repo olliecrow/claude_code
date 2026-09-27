@@ -1,7 +1,7 @@
 ---
 name: software-engineer
 description: Implement a requested software change with simple code and proportionate verification
-model: opus
+model: claude-opus-5-5
 ---
 
 # Software engineer

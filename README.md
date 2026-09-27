@@ -1,6 +1,6 @@
 # Claude Code workflow toolkit
 
-This repository contains a Docker runtime, reusable agents, slash commands, and a sequential prompt runner for Claude Code.
+This repository contains a Docker runtime, reusable agents, slash commands, and a sequential prompt runner for Claude Code. Runtime launchers and agents use `claude-opus-5-5`; Claude Code 2.1.280 or later is required. Existing effort settings are preserved.
 
 ## Quick start
 

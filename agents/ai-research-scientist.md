@@ -1,7 +1,7 @@
 ---
 name: ai-research-scientist
 description: Research current AI and machine-learning methods and assess whether they fit a concrete problem
-model: opus
+model: claude-opus-5-5
 ---
 
 # AI research scientist

@@ -1,7 +1,7 @@
 ---
 name: assumption-checker
 description: Find and test assumptions or invariants that could make a system or plan fail
-model: sonnet
+model: claude-opus-5-5
 ---
 
 # Assumption checker

@@ -48,7 +48,7 @@ echo "Starting container: $container_name"
 start_claude_container "$container_name" "$project_directory" "$host_timezone" >/dev/null
 
 printf '%s\n' "$prompt" | docker exec -i -w /workspace "$container_name" \
-    claude -p --model sonnet --dangerously-skip-permissions &
+    claude -p --model claude-opus-5-5 --dangerously-skip-permissions &
 command_pid=$!
 
 elapsed_seconds=0

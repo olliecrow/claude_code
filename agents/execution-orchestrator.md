@@ -1,7 +1,7 @@
 ---
 name: execution-orchestrator
 description: Coordinate a long or multi-part task while keeping one clear implementation path and owner
-model: opus
+model: claude-opus-5-5
 ---
 
 # Execution orchestrator
