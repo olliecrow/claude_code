@@ -11,8 +11,8 @@ if [[ "$range" == *..* ]]; then
   exec bash "${script_dir}/check-push-range.sh" --from "$from" --to "$to"
 fi
 
-if [[ "$range" == *^! ]]; then
-  exec bash "${script_dir}/check-push-range.sh" --only --to "${range%^!}"
+if [[ "$range" =~ ^[0-9a-f]{40}$ || "$range" =~ ^[0-9a-f]{64}$ ]]; then
+  exec bash "${script_dir}/check-push-range.sh" --all --to "$range"
 fi
 
 echo "error: unsupported push range" >&2

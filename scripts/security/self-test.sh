@@ -84,6 +84,43 @@ expect_text_ok "windows placeholder" "$scratch/windows-ok.txt"
 printf 'token=%s\n' 'abc123456789XYZ' > "$scratch/secret.txt"
 expect_secret_rejected "assigned credential" "$scratch/secret.txt"
 
+# Generate token fixtures at runtime; never store a complete token in source.
+for prefix in sk-ant-oat01 sk-ant-api03 sk-proj ghp gho ghu ghs ghr github_pat; do
+    separator=-
+    [[ "$prefix" == gh* || "$prefix" == github_pat ]] && separator=_
+    token_file="$scratch/${prefix}.txt"
+    printf '%s%s%s\n' "$prefix" "$separator" "$(printf 'aB7x%.0s' {1..24})" > "$token_file"
+    token_status=0
+    bash "$text_check" "$token_file" >/dev/null 2>&1 || token_status=$?
+    [[ "$token_status" -eq 1 ]] || fail "$prefix token was accepted"
+done
+printf '%s.%s.%s\n' "eyJ$(printf 'a%.0s' {1..20})" "$(printf 'b%.0s' {1..20})" "$(printf 'c%.0s' {1..20})" > "$scratch/jwt.txt"
+jwt_status=0
+bash "$text_check" "$scratch/jwt.txt" >/dev/null 2>&1 || jwt_status=$?
+[[ "$jwt_status" -eq 1 ]] || fail "JWT was accepted"
+
+if command -v gitleaks >/dev/null 2>&1; then
+    config="$script_dir/../../.gitleaks.toml"
+    leak_fixture="$scratch/leak-fixture"
+    mkdir "$leak_fixture"
+    check_gitleaks() {
+        local expected="$1" label="$2" content="$3" status=0
+        printf '%s\n' "$content" > "$leak_fixture/note.txt"
+        gitleaks dir --no-banner --redact --config "$config" "$leak_fixture" >/dev/null 2>&1 || status=$?
+        [[ "$status" -eq "$expected" ]] || fail "gitleaks $label exited $status, expected $expected"
+    }
+    check_gitleaks 1 home "$bad_home"
+    check_gitleaks 1 developer "$bad_developer"
+    check_gitleaks 1 users "$bad_user"
+    check_gitleaks 1 windows "$bad_windows"
+    check_gitleaks 1 mixed "/home/dev $bad_home"
+    check_gitleaks 0 placeholders "/home/dev/x /Users/YOU/x $placeholder_windows"
+    check_gitleaks 1 oauth "$(cat "$scratch/sk-ant-oat01.txt")"
+    check_gitleaks 1 api "$(cat "$scratch/sk-ant-api03.txt")"
+else
+    echo "Gitleaks fixture checks skipped: gitleaks is not installed."
+fi
+
 missing_status=0
 bash "$text_check" --context=self-test "$scratch/missing.txt" >/dev/null 2>&1 || missing_status=$?
 [[ "$missing_status" -eq 2 ]] || fail "missing file exited ${missing_status}"
@@ -169,6 +206,39 @@ only_status=0
 ) >/dev/null 2>&1 || only_status=$?
 [[ "$only_status" -ne 0 ]] || fail "single merge commit was accepted"
 
+# A binary attribute or NUL byte must not hide a changed secret.
+for binary_kind in attribute nul; do
+    previous_sha="$(git -C "$repo" rev-parse HEAD)"
+    if [[ "$binary_kind" == attribute ]]; then
+        commit_file .gitattributes 'binary.txt -diff' 'binary attribute'
+    fi
+    printf '%s/%s\n' "$bad_home" "$binary_kind" > "$repo/binary.txt"
+    [[ "$binary_kind" != nul ]] || printf '\0' >> "$repo/binary.txt"
+    git -C "$repo" add binary.txt
+    git -C "$repo" commit -qm "binary $binary_kind"
+    binary_sha="$(git -C "$repo" rev-parse HEAD)"
+    binary_status=0
+    (cd "$repo"; bash "$range_check" --from "$previous_sha" --to "$binary_sha") >/dev/null 2>&1 || binary_status=$?
+    [[ "$binary_status" -eq 1 ]] || fail "$binary_kind bypass was accepted"
+    if command -v gitleaks >/dev/null 2>&1; then
+        leak_status=0
+        gitleaks git --no-banner --redact --config "$config" \
+            --log-opts="--text --no-textconv --no-ext-diff $previous_sha..$binary_sha" "$repo" \
+            >/dev/null 2>&1 || leak_status=$?
+        [[ "$leak_status" -eq 1 ]] || fail "gitleaks $binary_kind bypass was accepted"
+    fi
+done
+
+# A clean tip must not hide a leak in an earlier commit, even on a remote ref.
+commit_file binary.txt 'clean' 'clean tip'
+clean_sha="$(git -C "$repo" rev-parse HEAD)"
+git -C "$repo" update-ref refs/remotes/origin/main "$clean_sha"
+for missing_base in '' "$zero_ref"; do
+    history_status=0
+    (cd "$repo"; bash "$range_check" --from "$missing_base" --to "$clean_sha") >/dev/null 2>&1 || history_status=$?
+    [[ "$history_status" -eq 1 ]] || fail "missing base skipped earlier commits"
+done
+
 subdir="$repo/nested"
 mkdir -p "$subdir"
 sub_status=0
@@ -186,19 +256,19 @@ empty_before="$(
     cd "$repo"
     bash "$range_script"
 )"
-[[ "$empty_before" == "${placeholder_sha}^!" ]] || fail "empty before produced ${empty_before}"
+[[ "$empty_before" == "${placeholder_sha}" ]] || fail "empty before produced ${empty_before}"
 export PUSH_BEFORE_SHA="$zero_ref"
 zero_before="$(
     cd "$repo"
     bash "$range_script"
 )"
-[[ "$zero_before" == "${placeholder_sha}^!" ]] || fail "zero before produced ${zero_before}"
+[[ "$zero_before" == "${placeholder_sha}" ]] || fail "zero before produced ${zero_before}"
 export PUSH_BEFORE_SHA="$fake_from"
 missing_before="$(
     cd "$repo"
     bash "$range_script"
 )"
-[[ "$missing_before" == "${placeholder_sha}^!" ]] || fail "unknown before produced ${missing_before}"
+[[ "$missing_before" == "${placeholder_sha}" ]] || fail "unknown before produced ${missing_before}"
 git -C "$repo" log --diff-merges=first-parent "$missing_before" >/dev/null || fail "fallback range is not a valid git range"
 export PUSH_BEFORE_SHA="$base_sha"
 export GITHUB_SHA="$plus_sha"

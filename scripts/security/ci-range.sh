@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Print a git revision range for this GitHub Actions event.
-# A missing, all-zero, or unknown push base prints <sha>^!, which is that
-# commit and not its parents. git accepts that range. An empty or all-zero
-# base is never printed, because git rejects it.
+# A missing, zero, or unknown push base scans all commits reachable from the target.
 set -euo pipefail
 
 if [[ "${GITHUB_EVENT_NAME:-}" == "pull_request" ]]; then
@@ -24,5 +22,5 @@ before="${PUSH_BEFORE_SHA:-}"
 if [[ -n "$before" && ! "$before" =~ ^0+$ ]] && git cat-file -e "${before}^{commit}" 2>/dev/null; then
   printf '%s..%s\n' "$before" "$target"
 else
-  printf '%s^!\n' "$target"
+  printf '%s\n' "$target"
 fi

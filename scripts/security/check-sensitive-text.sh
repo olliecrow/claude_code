@@ -15,7 +15,7 @@ fi
 local_path_regex='(/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|[A-Za-z]:\\+Users\\+[A-Za-z0-9._-]+)'
 allowed_path_placeholder_regex='(/Users/(YOU|USER|you|username)|/home/(dev|user|USER|username)|[A-Za-z]:\\+Users\\+(YOU|USER|USERNAME|username))'
 secret_assignment_regex='([Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt])[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+=-]{12,}'
-known_token_regex='((ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,})'
+known_token_regex='((ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-(ant-[a-z]+[0-9]{2}-|proj-)?[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)'
 function_call_regex='[[:space:]]*=[[:space:]]*[A-Za-z_][A-Za-z0-9_.]*\('
 
 # Print the line numbers that match an extended regex. Exit non-zero if
@@ -100,7 +100,8 @@ for target in "$@"; do
   fi
 
   path_matches="$(search_disallowed_path_line_numbers "$target")"
-  secret_assignment_matches="$(filter_function_calls "$target" "$(search_line_numbers "$secret_assignment_regex" "$target")")"
+  assignment_lines="$(search_line_numbers "$secret_assignment_regex" "$target")"
+  secret_assignment_matches="$(filter_function_calls "$target" "$assignment_lines")"
   known_token_matches="$(search_line_numbers "$known_token_regex" "$target")"
 
   if [[ -n "$path_matches" || -n "$secret_assignment_matches" || -n "$known_token_matches" ]]; then

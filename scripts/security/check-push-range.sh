@@ -10,8 +10,7 @@ usage: check-push-range.sh [--from <sha>] --to <sha>
        check-push-range.sh --all --to <sha>
 
 Scans every commit in <from>..<to>. Without --from, or with an all-zero
---from, scans the commits in <to> that are not on any remote, or <to>
-alone when all of them are. --only scans <to> and not its parents. --all
+--from, scans every commit reachable from <to>. --only scans <to> and not its parents. --all
 scans every commit reachable from <to>. Merge commits are scanned against
 their first parent. With no flags, reads the range that pre-commit sets
 for pre-push hooks.
@@ -95,9 +94,8 @@ elif [[ "$scan_all" -eq 1 ]]; then
   commit_list="$(git rev-list "$to_ref")" ||
     die "unable to list commits for the push range"
 elif [[ -z "$from_ref" || "$from_ref" == "$zero_ref" ]]; then
-  commit_list="$(git rev-list "$to_ref" --not --remotes)" ||
+  commit_list="$(git rev-list "$to_ref")" ||
     die "unable to list commits for the push range"
-  [[ -n "$commit_list" ]] || commit_list="$to_ref"
 else
   commit_list="$(git rev-list "${from_ref}..${to_ref}")" ||
     die "unable to list commits for the push range"
@@ -119,7 +117,7 @@ printf '%s\n' "$commit_list" |
 # real content instead of running a diff driver from the repo config.
 printf '%s\n' "$commit_list" |
   git log --stdin --no-walk=unsorted -m --first-parent --format= --patch \
-    --no-color --unified=0 --no-ext-diff --no-textconv |
+    --text --no-color --unified=0 --no-ext-diff --no-textconv |
   awk '/^diff / { in_hunk = 0; next } /^@@ / { in_hunk = 1; next } in_hunk && /^\+/ { sub(/^\+/, ""); print }' \
     >"${added_lines_file}"
 
