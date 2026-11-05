@@ -34,7 +34,13 @@ log="${DOCKER_MOCK_LOG:?}"
 mode="${DOCKER_MOCK_MODE:?}"
 state="${DOCKER_MOCK_STATE:?}"
 case "$1" in
-    info|image)
+    info)
+        if [[ "$mode" == rootless ]]; then
+            printf '[name=rootless]\n'
+        fi
+        exit 0
+        ;;
+    image)
         exit 0
         ;;
     run)
@@ -47,11 +53,12 @@ case "$1" in
             fi
             previous="$argument"
         done
-        if [[ "$mode" == "start-fail" ]]; then
+        if [[ "$mode" == "start-fail" || "$mode" == success ]]; then
             [[ -n "$cidfile" ]] || exit 2
             printf '%s\n' "${DOCKER_MOCK_ID:?}" > "$cidfile"
             printf '%s\n' "$cidfile" > "$state/cidfile-path"
             printf 'created\n' >> "$log"
+            [[ "$mode" != success ]] || exit 0
             exit 125
         fi
         if [[ "$mode" == "create-fail" ]]; then
@@ -59,6 +66,13 @@ case "$1" in
             exit 125
         fi
         exit 2
+        ;;
+    exec)
+        [[ "${5:-}" == "${DOCKER_MOCK_ID:?}" ]] || exit 3
+        printf 'exec %s\n' "$5" >> "$log"
+        [[ "$2" != -i ]] || cat >/dev/null
+        printf '{"result":"done","session_id":"test-session"}\n'
+        exit 0
         ;;
     rm)
         printf 'removed %s\n' "${3:-}" >> "$log"
@@ -188,6 +202,14 @@ if grep -F 'ANTHROPIC_API_KEY' "$dry_output" >/dev/null; then
     fail "dry run mentioned the unused auth variable"
 fi
 
+# Give the interactive launcher a terminal without using a live Docker daemon.
+cat > "$scratch/terminal.py" <<'PYTHON'
+import os
+import pty
+import sys
+sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))
+PYTHON
+
 run_launcher() {
     local mode="$1"
     local script_name="$2"
@@ -199,6 +221,10 @@ run_launcher() {
     local fake_home="$case_dir/home"
     mkdir -p "$state" "$temp_root" "$fake_home"
     local status=0
+    local command=(bash "$repository_root/container/$script_name")
+    if [[ "$script_name" == run.sh ]]; then
+        command=(python3 "$scratch/terminal.py" "${command[@]}")
+    fi
     env \
         HOME="$fake_home" \
         TMPDIR="$temp_root" \
@@ -208,7 +234,7 @@ run_launcher() {
         DOCKER_MOCK_MODE="$mode" \
         DOCKER_MOCK_ID="$container_id" \
         DOCKER_MOCK_STATE="$state" \
-        bash "$repository_root/container/$script_name" "$@" \
+        "${command[@]}" "$@" \
         > "$case_dir/stdout" 2> "$case_dir/stderr" || status=$?
     printf '%s\n' "$status"
     if [[ -n "$(find "$temp_root" -mindepth 1 -print -quit)" ]]; then
@@ -245,5 +271,24 @@ expect_start_failure_cleaned run_sequence_prompts.sh "$project" "$scratch/prompt
 expect_create_failure_keeps_other_containers run_sequence_prompts.sh "$project" "$scratch/prompts.txt"
 expect_start_failure_cleaned run_command.sh "$project" "hello"
 expect_create_failure_keeps_other_containers run_command.sh "$project" "hello"
+
+expect_start_failure_cleaned run.sh "$project"
+expect_create_failure_keeps_other_containers run.sh "$project"
+
+for launcher in run.sh run_command.sh run_sequence_prompts.sh; do
+    arguments=("$project" hello)
+    [[ "$launcher" != run.sh ]] || arguments=("$project")
+    [[ "$launcher" != run_sequence_prompts.sh ]] || arguments=("$project" "$scratch/prompts.txt")
+    rootless_status="$(run_launcher rootless "$launcher" "${arguments[@]}")"
+    [[ "$rootless_status" -eq 1 ]] || fail "$launcher did not reject rootless Docker"
+    grep -F 'rootless Docker maps the container user to another uid; use rootful Docker.' \
+        "$scratch/case-rootless-$launcher/stderr" "$scratch/case-rootless-$launcher/stdout" >/dev/null || fail "missing rootless message"
+    success_status="$(run_launcher success "$launcher" "${arguments[@]}")"
+    [[ "$success_status" -eq 0 ]] || fail "$launcher did not exec recorded ID"
+    grep -Fx "exec $container_id" "$scratch/case-success-$launcher/docker.log" >/dev/null || fail "exec was not called"
+done
+
+grep -Fx 'COPY --chmod=0644 managed-settings.json /etc/claude-code/managed-settings.json' \
+    "$repository_root/container/Dockerfile" >/dev/null || fail "managed settings mode is not fixed"
 
 echo "Launch checks passed."

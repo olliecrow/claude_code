@@ -197,7 +197,7 @@ run_claude_turn() {
         claude_arguments+=(--resume "$session_id")
     fi
 
-    printf '%s\n' "$prompt_text" | docker exec -i -w /workspace "$container_name" \
+    printf '%s\n' "$prompt_text" | docker exec -i -w /workspace "$(< "$container_id_file")" \
         claude "${claude_arguments[@]}" > "$json_output" &
     wait_for_pid "$!" "$timeout_seconds"
 }

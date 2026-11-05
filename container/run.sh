@@ -63,8 +63,8 @@ echo "Starting container: $container_name"
 start_claude_container "$container_name" "$project_directory" "$host_timezone" "$home_directory" "$container_id_file" >/dev/null
 
 if [[ "$run_mode" == "--shell" ]]; then
-    docker exec -it -w /workspace "$container_name" bash
+    docker exec -it -w /workspace "$(< "$container_id_file")" bash
 else
-    docker exec -it -w /workspace "$container_name" \
+    docker exec -it -w /workspace "$(< "$container_id_file")" \
         claude --model claude-opus-5-5 --dangerously-skip-permissions
 fi

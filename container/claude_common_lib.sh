@@ -94,6 +94,15 @@ require_claude_auth() {
     fi
 }
 
+docker_is_rootful() {
+    local security_options
+    security_options="$(docker info --format '{{.SecurityOptions}}')" || return 1
+    if [[ "$security_options" == *name=rootless* ]]; then
+        echo "Error: rootless Docker maps the container user to another uid; use rootful Docker." >&2
+        return 1
+    fi
+}
+
 require_docker() {
     if ! command -v docker >/dev/null 2>&1; then
         echo "Error: docker was not found in PATH." >&2
@@ -104,6 +113,8 @@ require_docker() {
         echo "Error: the Docker daemon is not reachable." >&2
         return 1
     fi
+
+    docker_is_rootful || return 1
 
     if ! docker image inspect claude_code_container >/dev/null 2>&1; then
         echo "Error: image claude_code_container is missing. Run ./container/build.sh." >&2

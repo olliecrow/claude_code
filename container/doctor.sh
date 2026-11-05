@@ -28,13 +28,6 @@ check() {
     fi
 }
 
-docker_is_rootful() {
-    local security_options
-
-    security_options="$(docker info --format '{{.SecurityOptions}}')" || return 1
-    [[ "$security_options" != *name=rootless* ]]
-}
-
 echo "claude_code container doctor"
 check "docker command" command -v docker
 check "Docker daemon" docker info

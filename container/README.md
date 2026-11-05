@@ -48,7 +48,7 @@ The prompt file format is:
 
 Handoffs and logs are written to the target project’s `plan/handoffs/` directory. Add `plan/` to that project's `.gitignore`; the runner warns when it is not ignored.
 
-Each run uses a new temporary home at `/home/dev` and deletes it afterwards, so sessions do not carry over between runs. To use your host config (skills, MCP servers, history, resume), set `CLAUDE_CONTAINER_MOUNT_HOST_CONFIG=1`. That mounts `~/.claude` read-write.
+Each run uses a new temporary home at `/home/dev` and deletes it afterwards, so sessions do not carry over between runs. To use your host skills, agents, commands, settings, and plugins, set `CLAUDE_CONTAINER_MOUNT_HOST_CONFIG=1`. That mounts `~/.claude` read-write. User MCP servers in `~/.claude.json` and host session resume do not carry over. Container sessions use the `/workspace` path for every project.
 
 `run.sh --shell` runs with all capabilities dropped, so `gdb` and `valgrind` may not be able to trace processes. Rebuild the image after you update this repository; the launch scripts expect the current image layout.
 

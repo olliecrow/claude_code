@@ -125,7 +125,7 @@ RUN set -eux; \
 
 # Settings that apply to every Claude session in the container. Managed
 # settings take precedence over user and project settings.
-COPY managed-settings.json /etc/claude-code/managed-settings.json
+COPY --chmod=0644 managed-settings.json /etc/claude-code/managed-settings.json
 
 # Python data tools live in a root-owned environment that only the full image
 # creates. Project commands inside the container use their own environments.

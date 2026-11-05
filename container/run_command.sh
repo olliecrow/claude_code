@@ -58,7 +58,7 @@ echo "Project: $project_directory"
 echo "Starting container: $container_name"
 start_claude_container "$container_name" "$project_directory" "$host_timezone" "$home_directory" "$container_id_file" >/dev/null
 
-printf '%s\n' "$prompt" | docker exec -i -w /workspace "$container_name" \
+printf '%s\n' "$prompt" | docker exec -i -w /workspace "$(< "$container_id_file")" \
     claude -p --model claude-opus-5-5 --dangerously-skip-permissions &
 
 if wait_for_pid "$!" "$timeout_seconds"; then
