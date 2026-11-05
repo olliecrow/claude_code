@@ -43,6 +43,8 @@ if [[ ! -f "$prompts_path" ]]; then
     exit 1
 fi
 
+timeout_seconds="$(claude_timeout_seconds)"
+
 if ! command -v python3 >/dev/null 2>&1; then
     echo "Error: python3 is required to parse Claude's JSON output." >&2
     exit 1
@@ -140,30 +142,42 @@ mkdir -p "$handoff_directory"
 : > "$workflow_log"
 handoff_initialized=1
 
-extract_json_field() {
+# Writes the result text and session ID from one Claude JSON result. Fails when
+# the output is not a successful result, so a failed turn stops the workflow.
+read_claude_result() {
     local source_file="$1"
-    local field_name="$2"
-    local destination_file="$3"
+    local result_file="$2"
+    local session_file="$3"
 
-    python3 - "$source_file" "$field_name" "$destination_file" <<'PY'
+    python3 - "$source_file" "$result_file" "$session_file" <<'PY'
 import json
+import re
 import sys
 from pathlib import Path
 
-source = Path(sys.argv[1])
-field = sys.argv[2]
-destination = Path(sys.argv[3])
+source, result_path, session_path = (Path(argument) for argument in sys.argv[1:4])
 
 try:
     data = json.loads(source.read_text(encoding="utf-8"))
 except (OSError, json.JSONDecodeError) as error:
     raise SystemExit(f"Could not parse Claude JSON output: {error}")
 
-value = data.get(field)
-if not isinstance(value, str):
-    raise SystemExit(f"Claude JSON output did not contain a string field named {field!r}")
+if not isinstance(data, dict):
+    raise SystemExit("Claude JSON output is not an object")
 
-destination.write_text(value, encoding="utf-8")
+result = data.get("result")
+if data.get("is_error") is True:
+    detail = result if isinstance(result, str) else data.get("subtype", "unknown error")
+    raise SystemExit(f"Claude reported an error: {str(detail)[:500]}")
+if not isinstance(result, str):
+    raise SystemExit("Claude JSON output did not contain a string result")
+
+session_id = data.get("session_id")
+if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", session_id):
+    raise SystemExit("Claude JSON output did not contain a valid session_id")
+
+result_path.write_text(result, encoding="utf-8")
+session_path.write_text(session_id, encoding="utf-8")
 PY
 }
 
@@ -183,7 +197,8 @@ run_claude_turn() {
     fi
 
     printf '%s\n' "$prompt_text" | docker exec -i -w /workspace "$container_name" \
-        claude "${claude_arguments[@]}" > "$json_output"
+        claude "${claude_arguments[@]}" > "$json_output" &
+    wait_for_pid "$!" "$timeout_seconds"
 }
 
 append_response() {
@@ -247,20 +262,18 @@ $prompt_text"
         json_file="$temporary_directory/conversation_${conversation_number}_${response_number}.json"
         result_file="$temporary_directory/conversation_${conversation_number}_${response_number}.txt"
         run_claude_turn "$full_prompt" "$session_id" "$json_file"
-
+        read_claude_result "$json_file" "$result_file" "$session_file"
         if [[ -z "$session_id" ]]; then
-            extract_json_field "$json_file" "session_id" "$session_file"
             session_id="$(< "$session_file")"
         fi
 
-        extract_json_field "$json_file" "result" "$result_file"
         append_response "$transcript_file" "$response_number" "$result_file"
         response_number=$((response_number + 1))
     done
 
     json_file="$temporary_directory/conversation_${conversation_number}_handoff.json"
     run_claude_turn "$(handoff_prompt)" "$session_id" "$json_file"
-    extract_json_field "$json_file" "result" "$handoff_file"
+    read_claude_result "$json_file" "$handoff_file" "$session_file"
     previous_handoff="$(< "$handoff_file")"
     conversation_count=$((conversation_count + 1))
     log "Conversation $conversation_number: handoff saved."

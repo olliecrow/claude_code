@@ -16,17 +16,13 @@ fi
 
 project_directory="$1"
 prompt="$2"
-timeout_seconds="${CLAUDE_TIMEOUT_SECONDS:-5400}"
 
 if [[ -z "${prompt//[[:space:]]/}" ]]; then
     echo "Error: prompt must not be empty." >&2
     exit 1
 fi
 
-if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
-    echo "Error: CLAUDE_TIMEOUT_SECONDS must be a positive integer." >&2
-    exit 1
-fi
+timeout_seconds="$(claude_timeout_seconds)"
 
 require_directory "$project_directory"
 require_claude_auth
@@ -57,22 +53,8 @@ start_claude_container "$container_name" "$project_directory" "$host_timezone" "
 
 printf '%s\n' "$prompt" | docker exec -i -w /workspace "$container_name" \
     claude -p --model claude-opus-5-5 --dangerously-skip-permissions &
-command_pid=$!
 
-elapsed_seconds=0
-poll_seconds=5
-while kill -0 "$command_pid" 2>/dev/null; do
-    if (( elapsed_seconds >= timeout_seconds )); then
-        echo "Error: Claude timed out after ${timeout_seconds} seconds." >&2
-        kill "$command_pid" 2>/dev/null || true
-        wait "$command_pid" 2>/dev/null || true
-        exit 124
-    fi
-    sleep "$poll_seconds"
-    elapsed_seconds=$((elapsed_seconds + poll_seconds))
-done
-
-if wait "$command_pid"; then
+if wait_for_pid "$!" "$timeout_seconds"; then
     echo "Claude completed the prompt."
 else
     exit_code=$?

@@ -167,6 +167,37 @@ start_claude_container() {
     docker "${docker_arguments[@]}"
 }
 
+# Prints CLAUDE_TIMEOUT_SECONDS, default 5400, after checking it.
+claude_timeout_seconds() {
+    local timeout_seconds="${CLAUDE_TIMEOUT_SECONDS:-5400}"
+
+    if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Error: CLAUDE_TIMEOUT_SECONDS must be a positive integer." >&2
+        return 1
+    fi
+    printf '%s\n' "$timeout_seconds"
+}
+
+# Waits for a background process and returns its status, or 124 after the
+# timeout. The caller's EXIT trap removes the container.
+wait_for_pid() {
+    local process_id="$1"
+    local timeout_seconds="$2"
+    local elapsed_seconds=0
+
+    while kill -0 "$process_id" 2>/dev/null; do
+        if (( elapsed_seconds >= timeout_seconds )); then
+            echo "Error: Claude timed out after ${timeout_seconds} seconds." >&2
+            kill "$process_id" 2>/dev/null || true
+            wait "$process_id" 2>/dev/null || true
+            return 124
+        fi
+        sleep 1
+        elapsed_seconds=$((elapsed_seconds + 1))
+    done
+    wait "$process_id"
+}
+
 stop_container() {
     local container_name="$1"
 

@@ -37,6 +37,8 @@ Every download is pinned by version and SHA-256 checksum in the `Dockerfile`. To
 ./run_sequence_prompts.sh /path/to/project /path/to/prompts.txt
 ```
 
+`run_command.sh` and each turn of `run_sequence_prompts.sh` stop after `CLAUDE_TIMEOUT_SECONDS` (default 5400). A turn that times out or returns an error result stops the sequence and marks it `FAILED`.
+
 The prompt file format is:
 
 - blank lines separate prompts;
