@@ -7,6 +7,7 @@ text_check="$script_dir/check-sensitive-text.sh"
 range_check="$script_dir/check-push-range.sh"
 range_script="$script_dir/ci-range.sh"
 scan_script="$script_dir/ci-push-scan.sh"
+gitleaks_wrapper="$script_dir/gitleaks-range.sh"
 scratch="$(mktemp -d)"
 trap 'rm -rf -- "$scratch"' EXIT
 
@@ -206,6 +207,41 @@ only_status=0
 ) >/dev/null 2>&1 || only_status=$?
 [[ "$only_status" -ne 0 ]] || fail "single merge commit was accepted"
 
+# The gitleaks wrapper must fail closed: gitleaks itself exits 0 when git
+# cannot read the range.
+expect_wrapper() {
+    local expected="$1" label="$2" status=0
+    shift 2
+    (cd "$repo"; "$@") >/dev/null 2>&1 || status=$?
+    [[ "$status" -eq "$expected" ]] || fail "gitleaks wrapper $label exited $status, expected $expected"
+}
+fake_bin="$scratch/fake-gitleaks"
+mkdir "$fake_bin"
+cat > "$fake_bin/gitleaks" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${FAKE_GITLEAKS_MODE:?}" == error ]]; then
+    echo '12:00AM ERR [git] fatal: ambiguous argument'
+    echo '12:00AM INF 1 commits scanned.'
+else
+    echo '12:00AM INF 0 commits scanned.'
+fi
+echo '12:00AM INF no leaks found'
+EOF
+chmod 755 "$fake_bin/gitleaks"
+for fake_mode in error zero; do
+    expect_wrapper 2 "fake $fake_mode" env PATH="$fake_bin:$PATH" FAKE_GITLEAKS_MODE="$fake_mode" \
+        bash "$gitleaks_wrapper" --from "$base_sha" --to "$plus_sha"
+done
+expect_wrapper 2 "unknown base" bash "$gitleaks_wrapper" --from "$fake_from" --to "$plus_sha"
+expect_wrapper 2 "base with a space" bash "$gitleaks_wrapper" --from "$base_sha " --to "$plus_sha"
+expect_wrapper 2 "name target" bash "$gitleaks_wrapper" --to HEAD
+expect_wrapper 2 "missing target" bash "$gitleaks_wrapper"
+if command -v gitleaks >/dev/null 2>&1; then
+    expect_wrapper 0 "clean range" bash "$gitleaks_wrapper" --from "$plus_sha" --to "$placeholder_sha"
+    expect_wrapper 1 "merge addition" bash "$gitleaks_wrapper" --from "$merge_parent" --to "$merge_sha"
+    expect_wrapper 0 "empty range" bash "$gitleaks_wrapper" --from "$merge_sha" --to "$merge_sha"
+fi
+
 # A binary attribute or NUL byte must not hide a changed secret.
 for binary_kind in attribute nul; do
     previous_sha="$(git -C "$repo" rev-parse HEAD)"
@@ -221,11 +257,7 @@ for binary_kind in attribute nul; do
     (cd "$repo"; bash "$range_check" --from "$previous_sha" --to "$binary_sha") >/dev/null 2>&1 || binary_status=$?
     [[ "$binary_status" -eq 1 ]] || fail "$binary_kind bypass was accepted"
     if command -v gitleaks >/dev/null 2>&1; then
-        leak_status=0
-        gitleaks git --no-banner --redact --config "$config" \
-            --log-opts="--text --no-textconv --no-ext-diff $previous_sha..$binary_sha" "$repo" \
-            >/dev/null 2>&1 || leak_status=$?
-        [[ "$leak_status" -eq 1 ]] || fail "gitleaks $binary_kind bypass was accepted"
+        expect_wrapper 1 "$binary_kind bypass" bash "$gitleaks_wrapper" --from "$previous_sha" --to "$binary_sha"
     fi
 done
 
@@ -304,5 +336,13 @@ parent_status=0
     bash "$scan_script"
 ) >/dev/null 2>&1 || parent_status=$?
 [[ "$parent_status" -ne 0 ]] || fail "CI scan of the merge range was accepted"
+
+# gitleaks does not count a commit that only deletes lines; that is not an error.
+git -C "$repo" rm -q side.txt
+git -C "$repo" commit -qm 'delete only'
+delete_sha="$(git -C "$repo" rev-parse HEAD)"
+if command -v gitleaks >/dev/null 2>&1; then
+    expect_wrapper 0 "delete-only range" bash "$gitleaks_wrapper" --from "$clean_sha" --to "$delete_sha"
+fi
 
 echo "Security self-test passed."

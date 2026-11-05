@@ -25,6 +25,7 @@ shell_scripts=(
     scripts/security/check-sensitive-text.sh
     scripts/security/ci-push-scan.sh
     scripts/security/ci-range.sh
+    scripts/security/gitleaks-range.sh
     scripts/security/self-test.sh
 )
 

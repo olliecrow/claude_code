@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Scan the CI revision range for sensitive commit messages and added lines.
+# Scan the CI revision range: commit messages and added lines, then gitleaks.
+# An empty base scans every commit reachable from the target.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,12 +9,13 @@ range="$(bash "${script_dir}/ci-range.sh")"
 if [[ "$range" == *..* ]]; then
   from="${range%%..*}"
   to="${range#*..}"
-  exec bash "${script_dir}/check-push-range.sh" --from "$from" --to "$to"
+elif [[ "$range" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; then
+  from=""
+  to="$range"
+else
+  echo "error: unsupported push range" >&2
+  exit 1
 fi
 
-if [[ "$range" =~ ^[0-9a-f]{40}$ || "$range" =~ ^[0-9a-f]{64}$ ]]; then
-  exec bash "${script_dir}/check-push-range.sh" --all --to "$range"
-fi
-
-echo "error: unsupported push range" >&2
-exit 1
+bash "${script_dir}/check-push-range.sh" --from "$from" --to "$to"
+bash "${script_dir}/gitleaks-range.sh" --from "$from" --to "$to"

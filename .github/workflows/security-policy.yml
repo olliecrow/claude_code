@@ -48,22 +48,10 @@ jobs:
           install -m 0755 "${RUNNER_TEMP}/${binary}" "${RUNNER_TEMP}/osv-scanner"
           echo "${RUNNER_TEMP}" >> "$GITHUB_PATH"
 
-      - name: Scan pushed commits with gitleaks
-        if: github.event_name != 'schedule'
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          set -euo pipefail
-          range="$(bash scripts/security/ci-range.sh)"
-          gitleaks git --redact --verbose --config .gitleaks.toml \
-            --log-opts="--text --no-textconv --no-ext-diff --diff-merges=first-parent ${range}"
-
       - name: Scan the current tree with gitleaks
         run: gitleaks dir --redact --verbose --config .gitleaks.toml .
 
-      - name: Check commit messages and added lines
+      - name: Scan pushed commits (messages, added lines, gitleaks)
         if: github.event_name != 'schedule'
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
