@@ -20,6 +20,7 @@ shell_scripts=(
     container/run_command.sh
     container/run_sequence_prompts.sh
     scripts/check.sh
+    scripts/check_launch.sh
     scripts/security/check-push-range.sh
     scripts/security/check-sensitive-text.sh
 )
@@ -57,5 +58,7 @@ if bash scripts/security/check-sensitive-text.sh --context=self-test "$unsafe_te
     echo "Error: sensitive-text self-test did not reject an unsafe value." >&2
     exit 1
 fi
+
+bash scripts/check_launch.sh
 
 echo "Repository checks passed."

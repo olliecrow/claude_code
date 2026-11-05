@@ -60,7 +60,7 @@ workflow_log="$handoff_directory/workflow_log.txt"
 workflow_status="$handoff_directory/workflow_status.txt"
 
 temporary_directory=""
-container_started=0
+container_id_file=""
 workflow_complete=0
 handoff_initialized=0
 
@@ -86,8 +86,8 @@ write_status() {
 cleanup() {
     local exit_code=$?
 
-    if [[ "$container_started" -eq 1 ]]; then
-        stop_container "$container_name"
+    if [[ -n "$container_id_file" ]]; then
+        remove_recorded_container "$container_id_file"
     fi
     if [[ -n "$temporary_directory" ]]; then
         rm -rf -- "$temporary_directory"
@@ -137,6 +137,7 @@ require_claude_auth
 require_docker
 
 temporary_directory="$(mktemp -d)"
+container_id_file="$temporary_directory/container.id"
 trap cleanup EXIT
 mkdir -p "$handoff_directory"
 : > "$workflow_log"
@@ -287,8 +288,7 @@ write_status "STARTED"
 
 mkdir "$temporary_directory/home"
 populate_container_home "$temporary_directory/home"
-start_claude_container "$container_name" "$project_directory" "$host_timezone" "$temporary_directory/home" >/dev/null
-container_started=1
+start_claude_container "$container_name" "$project_directory" "$host_timezone" "$temporary_directory/home" "$container_id_file" >/dev/null
 log "Container started."
 
 conversation_number=1

@@ -43,6 +43,11 @@ else
     config_mount="Mount a new temporary home at /home/dev, with only the credentials file if that is the auth source."
 fi
 auth_source="$(container_auth_source)"
+if [[ "$auth_source" == "credentials file" ]]; then
+    auth_forward="Forwards no auth environment variable."
+else
+    auth_forward="Forwards only ${auth_source}."
+fi
 
 print_trust_warning
 cat <<EOF
@@ -53,6 +58,7 @@ Container: $container_name
 Action: $action
 Timezone: ${host_timezone:-not detected}
 Authentication: $auth_source
+$auth_forward
 
 Planned sequence:
 1. Start claude_code_container with bridge networking, as uid $(id -u), with all capabilities dropped.

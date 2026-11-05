@@ -54,6 +54,7 @@ mounts_host_config() {
 }
 
 # Prints the authentication source the container will use, without its value.
+# An OAuth token wins over an API key. Only that one value is forwarded.
 container_auth_source() {
     if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
         echo "CLAUDE_CODE_OAUTH_TOKEN"
@@ -64,6 +65,19 @@ container_auth_source() {
     else
         return 1
     fi
+}
+
+# Prints the one auth variable to forward, or nothing when the credentials
+# file is the source. Returns 1 when no usable auth exists.
+container_auth_variable() {
+    local auth_source=""
+
+    auth_source="$(container_auth_source)" || return 1
+    case "$auth_source" in
+        CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY)
+            printf '%s\n' "$auth_source"
+            ;;
+    esac
 }
 
 require_claude_auth() {
@@ -129,6 +143,8 @@ start_claude_container() {
     local project_directory="$2"
     local host_timezone="$3"
     local home_directory="$4"
+    local container_id_file="${5:-}"
+    local auth_variable=""
     local docker_arguments=(
         run
         -d
@@ -156,11 +172,19 @@ start_claude_container() {
     if [[ -n "$host_timezone" ]]; then
         docker_arguments+=(--env "TZ=$host_timezone")
     fi
-    if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
-        docker_arguments+=(--env CLAUDE_CODE_OAUTH_TOKEN)
+    if auth_variable="$(container_auth_variable)"; then
+        if [[ -n "$auth_variable" ]]; then
+            docker_arguments+=(--env "$auth_variable")
+        fi
     fi
-    if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-        docker_arguments+=(--env ANTHROPIC_API_KEY)
+    # Record the container this call creates, even when startup fails.
+    # Cleanup removes that id and never a container chosen by name.
+    if [[ -n "$container_id_file" ]]; then
+        if [[ -e "$container_id_file" ]]; then
+            echo "Error: container id file already exists." >&2
+            return 1
+        fi
+        docker_arguments+=(--cidfile "$container_id_file")
     fi
 
     docker_arguments+=(claude_code_container tail -f /dev/null)
@@ -198,19 +222,28 @@ wait_for_pid() {
     wait "$process_id"
 }
 
-stop_container() {
-    local container_name="$1"
+# Removes the container recorded by docker run --cidfile. A missing or empty
+# file means this run did not create a container, so nothing is removed.
+remove_recorded_container() {
+    local container_id_file="$1"
+    local container_id=""
 
-    if [[ -n "$container_name" ]]; then
-        docker rm -f "$container_name" >/dev/null 2>&1 || true
+    if [[ ! -s "$container_id_file" ]]; then
+        return 0
     fi
+    container_id="$(tr -d '[:space:]' < "$container_id_file")"
+    if [[ ! "$container_id" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        echo "Error: container id file did not contain a container id." >&2
+        return 0
+    fi
+    docker rm -f "$container_id" >/dev/null 2>&1 || true
 }
 
 print_trust_warning() {
     cat <<'EOF'
 Warning: this container has network access and a read-write project mount.
 Claude permission checks are bypassed. Use trusted inputs only.
-Auth environment variables are visible to local Docker inspection while it runs.
+Any auth variable forwarded into the container is visible to local Docker inspection while it runs.
 EOF
     if mounts_host_config; then
         echo "Host Claude config (~/.claude) is mounted read-write."

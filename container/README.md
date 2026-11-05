@@ -4,7 +4,7 @@ This directory builds and runs Claude Code in a Docker container for trusted pro
 
 ## Authentication
 
-The container accepts `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, or a Linux `~/.claude/.credentials.json` file. When neither variable is set, the launcher copies only that credentials file into a temporary config directory for the run. A normal macOS login is stored in Keychain and is not visible inside Docker.
+The container accepts `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, or a Linux `~/.claude/.credentials.json` file. When both variables are set, the launcher forwards only `CLAUDE_CODE_OAUTH_TOKEN`. When neither variable is set, it copies only that credentials file into a temporary config directory for the run. A normal macOS login is stored in Keychain and is not visible inside Docker.
 
 Subscription users can run `claude setup-token`, store the result securely, and export it as `CLAUDE_CODE_OAUTH_TOKEN`. Do not put tokens in this repository or pass them as script arguments.
 
@@ -16,7 +16,7 @@ Subscription users can run `claude setup-token`, store the result securely, and 
 ./build.sh --no-cache
 ```
 
-Both images contain Claude Code 2.1.311, uv, Python 3.12, and ripgrep. The full image adds native build tools, debuggers, Node.js 22, Rust, ffmpeg, and Python data tools (Jupyter, NumPy, pandas, and others) on `PATH`. The minimal image has none of those.
+Both images contain Claude Code 2.1.311, uv, Python 3.12.16, and ripgrep. The full image adds native build tools, debuggers, Node.js 22, Rust, ffmpeg, and Python data tools (Jupyter, NumPy, pandas, and others) on `PATH`. The minimal image has none of those.
 
 Every download is pinned by version and SHA-256 checksum in the `Dockerfile`. To move a version, change the version and its checksums together. Builds use the Docker cache; pass `--no-cache` to refresh Debian packages.
 
@@ -54,4 +54,4 @@ Each run uses a new temporary home at `/home/dev` and deletes it afterwards, so 
 
 ## Important security limits
 
-The project is mounted read-write, the container has network access, and Claude runs with permission checks bypassed. The container runs as your host uid with all Linux capabilities dropped. Auth environment variables remain visible to local Docker inspection until the container is removed. Use only trusted projects and prompts. Git and GitHub CLI command names are blocked to prevent common accidental changes, but the block is not a security boundary.
+The project is mounted read-write, the container has network access, and Claude runs with permission checks bypassed. The container runs as your host uid with all Linux capabilities dropped. Only the auth variable in use is forwarded, and that value remains visible to local Docker inspection until the container is removed. A failed startup still removes the container this run created. Use only trusted projects and prompts. Git and GitHub CLI command names are blocked to prevent common accidental changes, but the block is not a security boundary.

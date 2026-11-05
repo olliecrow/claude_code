@@ -37,23 +37,30 @@ host_timezone="$(detect_host_timezone)"
 project_name="$(safe_container_component "$(basename "$project_directory")")"
 container_name="claude_code_${project_name}_$$"
 
+run_directory=""
 home_directory=""
+container_id_file=""
 
 cleanup() {
-    stop_container "$container_name"
-    if [[ -n "$home_directory" ]]; then
-        rm -rf -- "$home_directory"
+    if [[ -n "$container_id_file" ]]; then
+        remove_recorded_container "$container_id_file"
+    fi
+    if [[ -n "$run_directory" ]]; then
+        rm -rf -- "$run_directory"
     fi
 }
-trap cleanup EXIT
 
-home_directory="$(mktemp -d)"
+run_directory="$(mktemp -d)"
+home_directory="$run_directory/home"
+container_id_file="$run_directory/container.id"
+trap cleanup EXIT
+mkdir "$home_directory"
 populate_container_home "$home_directory"
 
 print_trust_warning
 echo "Project: $project_directory"
 echo "Starting container: $container_name"
-start_claude_container "$container_name" "$project_directory" "$host_timezone" "$home_directory" >/dev/null
+start_claude_container "$container_name" "$project_directory" "$host_timezone" "$home_directory" "$container_id_file" >/dev/null
 
 if [[ "$run_mode" == "--shell" ]]; then
     docker exec -it -w /workspace "$container_name" bash

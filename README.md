@@ -17,7 +17,7 @@ claude setup-token
 export CLAUDE_CODE_OAUTH_TOKEN=...
 ```
 
-API users can instead set `ANTHROPIC_API_KEY`. Linux users with `~/.claude/.credentials.json` do not need either environment variable; the launcher copies only that one file into the run.
+API users can instead set `ANTHROPIC_API_KEY`. When both are set, the launcher forwards only `CLAUDE_CODE_OAUTH_TOKEN`. Linux users with `~/.claude/.credentials.json` do not need either environment variable; the launcher copies only that one file into the run.
 
 Build the image and check the local setup.
 
@@ -60,7 +60,7 @@ Use the container only with projects and prompts you trust.
 - The container runs as your host uid with all Linux capabilities dropped and `no-new-privileges` set.
 - The container has internet access.
 - Claude runs with permission checks bypassed.
-- Auth environment variables are visible to local Docker inspection while the container runs.
+- Only the auth variable in use is forwarded. It is visible to local Docker inspection while the container runs.
 - Common Git commands are blocked, but this is a guardrail rather than a complete security boundary.
 
 The container limits ordinary filesystem access to its own filesystem and the mounted paths. It does not protect the run's credentials or project data from code or commands run inside it. Deny rules for the credentials file stop Claude's file tools, not every indirect read through Bash.
