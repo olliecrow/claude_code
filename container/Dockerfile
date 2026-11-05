@@ -1,4 +1,6 @@
-FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+# Official python:3.12-slim index. linux/amd64 and linux/arm64 both provide
+# Python 3.12.16, the 2026-10-25 security release.
+FROM python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
 
 # 1 builds the full image. 0 builds the minimal image.
 ARG FULL_IMAGE=1
