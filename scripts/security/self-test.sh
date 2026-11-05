@@ -107,6 +107,9 @@ bash "$range_check" >/dev/null 2>&1 || empty_status=$?
 
 repo="$scratch/repo"
 git init -q -b main "$repo"
+git -C "$repo" config user.name 'Policy Test'
+git -C "$repo" config user.email 'policy-test@example.com'
+git -C "$repo" config commit.gpgsign false
 commit_file() {
     local name="$1"
     local content="$2"
@@ -141,7 +144,9 @@ placeholder_sha="$(git -C "$repo" rev-parse HEAD)"
 git -C "$repo" checkout -q -b side
 commit_file side.txt 'side only' 'side'
 git -C "$repo" checkout -q main
-git -C "$repo" merge -q --no-ff --no-commit side >/dev/null 2>&1
+merge_setup=0
+git -C "$repo" merge -q --no-ff --no-commit side >/dev/null 2>&1 || merge_setup=$?
+[[ "$merge_setup" -eq 0 ]] || fail "test merge exited ${merge_setup}"
 printf '%s\n' "$bad_home" > "$repo/secret.txt"
 git -C "$repo" add -- secret.txt
 git -C "$repo" \
