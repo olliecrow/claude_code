@@ -3,6 +3,8 @@
 # Shared helpers for the container launch scripts. This file does not set shell
 # options or traps; each caller owns its process lifecycle.
 
+container_home=/home/dev
+
 detect_host_timezone() {
     local timezone=""
 
@@ -12,11 +14,11 @@ detect_host_timezone() {
         timezone="$(sed -n '1p' /etc/timezone)"
     fi
 
-    if [[ -z "$timezone" ]]; then
-        timezone="$(date +%Z 2>/dev/null || true)"
+    # Keep only IANA-style names. Abbreviations such as EST are not valid TZ
+    # names, and a wrong zone is worse than the container default of UTC.
+    if [[ "$timezone" == "UTC" || "$timezone" =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)+$ ]]; then
+        printf '%s\n' "$timezone"
     fi
-
-    printf '%s\n' "$timezone"
 }
 
 require_directory() {
@@ -36,20 +38,41 @@ absolute_directory() {
     )
 }
 
-has_container_auth() {
-    [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]] \
-        || [[ -n "${ANTHROPIC_API_KEY:-}" ]] \
-        || [[ -f "$HOME/.claude/.credentials.json" ]]
+# Docker parses --mount values as CSV, so these characters would split or
+# corrupt the option.
+require_mount_safe_path() {
+    local path_value="$1"
+
+    if [[ "$path_value" == *,* || "$path_value" == *\"* || "$path_value" == *$'\n'* ]]; then
+        echo "Error: path contains a character Docker mount options cannot carry: $path_value" >&2
+        return 1
+    fi
+}
+
+mounts_host_config() {
+    [[ "${CLAUDE_CONTAINER_MOUNT_HOST_CONFIG:-0}" == "1" ]]
+}
+
+# Prints the authentication source the container will use, without its value.
+container_auth_source() {
+    if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
+        echo "CLAUDE_CODE_OAUTH_TOKEN"
+    elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+        echo "ANTHROPIC_API_KEY"
+    elif [[ -f "$HOME/.claude/.credentials.json" && -s "$HOME/.claude/.credentials.json" ]]; then
+        echo "credentials file"
+    else
+        return 1
+    fi
 }
 
 require_claude_auth() {
-    if [[ ! -d "$HOME/.claude" ]]; then
-        echo "Error: Claude configuration was not found at ~/.claude." >&2
-        echo "Run Claude Code on the host once to create it." >&2
+    if mounts_host_config && [[ ! -d "$HOME/.claude" ]]; then
+        echo "Error: CLAUDE_CONTAINER_MOUNT_HOST_CONFIG=1 but ~/.claude does not exist." >&2
         return 1
     fi
 
-    if ! has_container_auth; then
+    if ! container_auth_source >/dev/null; then
         echo "Error: no authentication usable inside Docker was found." >&2
         echo "Set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY." >&2
         echo "A macOS Keychain login is not available inside the container." >&2
@@ -79,23 +102,56 @@ safe_container_component() {
     printf '%s' "$raw_name" | LC_ALL=C tr -c 'A-Za-z0-9_.-' '_'
 }
 
+# Fills a new, empty host directory that becomes the container home. Only the
+# credentials file is copied, and only when no auth variable is set.
+populate_container_home() {
+    local home_directory="$1"
+
+    chmod 700 "$home_directory"
+    mkdir -m 700 "$home_directory/.claude"
+
+    if mounts_host_config; then
+        return 0
+    fi
+
+    # .claude.json records that first-launch setup is done, so an interactive
+    # run does not repeat it every time.
+    printf '{"hasCompletedOnboarding": true}\n' > "$home_directory/.claude/.claude.json"
+
+    if [[ "$(container_auth_source)" == "credentials file" ]]; then
+        cp "$HOME/.claude/.credentials.json" "$home_directory/.claude/.credentials.json"
+        chmod 600 "$home_directory/.claude/.credentials.json"
+    fi
+}
+
 start_claude_container() {
     local container_name="$1"
     local project_directory="$2"
     local host_timezone="$3"
+    local home_directory="$4"
     local docker_arguments=(
         run
         -d
         --name "$container_name"
         --mount "type=bind,source=$project_directory,target=/workspace"
-        --mount "type=bind,source=$HOME/.claude,target=/home/dev/.claude"
+        --mount "type=bind,source=$home_directory,target=$container_home"
         --network bridge
-        --user 1000:1000
+        --user "$(id -u):$(id -g)"
+        --cap-drop ALL
+        --security-opt no-new-privileges:true
+        --pids-limit 4096
         --workdir /workspace
         --env TERM=xterm-256color
-        --env CLAUDE_CONFIG_DIR=/home/dev/.claude
-        --env DISABLE_AUTOUPDATER=1
+        --env "HOME=$container_home"
+        --env "CLAUDE_CONFIG_DIR=$container_home/.claude"
     )
+
+    require_mount_safe_path "$project_directory" || return 1
+    require_mount_safe_path "$home_directory" || return 1
+    if mounts_host_config; then
+        require_mount_safe_path "$HOME/.claude" || return 1
+        docker_arguments+=(--mount "type=bind,source=$HOME/.claude,target=$container_home/.claude")
+    fi
 
     if [[ -n "$host_timezone" ]]; then
         docker_arguments+=(--env "TZ=$host_timezone")
@@ -121,8 +177,13 @@ stop_container() {
 
 print_trust_warning() {
     cat <<'EOF'
-Warning: this container has network access and read-write mounts for the project
-and ~/.claude. Claude permission checks are bypassed. Use trusted inputs only.
+Warning: this container has network access and a read-write project mount.
+Claude permission checks are bypassed. Use trusted inputs only.
 Auth environment variables are visible to local Docker inspection while it runs.
 EOF
+    if mounts_host_config; then
+        echo "Host Claude config (~/.claude) is mounted read-write."
+    else
+        echo "Claude config is a temporary directory that is deleted after the run."
+    fi
 }

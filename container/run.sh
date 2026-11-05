@@ -23,6 +23,11 @@ if [[ -n "$run_mode" && "$run_mode" != "--shell" ]]; then
     exit 1
 fi
 
+if [[ ! -t 0 || ! -t 1 ]]; then
+    echo "Error: run.sh needs a terminal. Use run_command.sh for a script." >&2
+    exit 1
+fi
+
 require_directory "$project_directory"
 require_claude_auth
 require_docker
@@ -32,15 +37,23 @@ host_timezone="$(detect_host_timezone)"
 project_name="$(safe_container_component "$(basename "$project_directory")")"
 container_name="claude_code_${project_name}_$$"
 
+home_directory=""
+
 cleanup() {
     stop_container "$container_name"
+    if [[ -n "$home_directory" ]]; then
+        rm -rf -- "$home_directory"
+    fi
 }
 trap cleanup EXIT
+
+home_directory="$(mktemp -d)"
+populate_container_home "$home_directory"
 
 print_trust_warning
 echo "Project: $project_directory"
 echo "Starting container: $container_name"
-start_claude_container "$container_name" "$project_directory" "$host_timezone" >/dev/null
+start_claude_container "$container_name" "$project_directory" "$host_timezone" "$home_directory" >/dev/null
 
 if [[ "$run_mode" == "--shell" ]]; then
     docker exec -it -w /workspace "$container_name" bash

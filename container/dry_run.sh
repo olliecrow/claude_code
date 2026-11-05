@@ -37,6 +37,13 @@ else
     action="launch Claude Opus 5.5"
 fi
 
+if mounts_host_config; then
+    config_mount="Mount ~/.claude read-write at /home/dev/.claude."
+else
+    config_mount="Mount a new temporary home at /home/dev, with only the credentials file if that is the auth source."
+fi
+auth_source="$(container_auth_source)"
+
 print_trust_warning
 cat <<EOF
 
@@ -45,13 +52,14 @@ Project: $project_directory
 Container: $container_name
 Action: $action
 Timezone: ${host_timezone:-not detected}
+Authentication: $auth_source
 
 Planned sequence:
-1. Start claude_code_container with bridge networking.
-2. Mount the project at /workspace and ~/.claude at /home/dev/.claude.
-3. Pass the configured container authentication environment variable, if used.
+1. Start claude_code_container with bridge networking, as uid $(id -u), with all capabilities dropped.
+2. Mount the project at /workspace.
+3. $config_mount
 4. $action.
-5. Remove the container when the session ends.
+5. Remove the container and the temporary home when the session ends.
 
 No Docker command was run and no project file was changed.
 EOF

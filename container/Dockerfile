@@ -121,6 +121,10 @@ RUN set -eux; \
         > /usr/local/bin/afplay; \
     chmod 755 /usr/local/bin/git /usr/local/bin/git-lfs /usr/local/bin/gh /usr/local/bin/afplay
 
+# Settings that apply to every Claude session in the container. Managed
+# settings take precedence over user and project settings.
+COPY managed-settings.json /etc/claude-code/managed-settings.json
+
 # Python data tools live in a root-owned environment that only the full image
 # creates. Project commands inside the container use their own environments.
 COPY pyproject.toml uv.lock /opt/claude-tools-project/

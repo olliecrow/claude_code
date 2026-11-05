@@ -37,15 +37,23 @@ host_timezone="$(detect_host_timezone)"
 project_name="$(safe_container_component "$(basename "$project_directory")")"
 container_name="claude_code_command_${project_name}_$$"
 
+home_directory=""
+
 cleanup() {
     stop_container "$container_name"
+    if [[ -n "$home_directory" ]]; then
+        rm -rf -- "$home_directory"
+    fi
 }
 trap cleanup EXIT
+
+home_directory="$(mktemp -d)"
+populate_container_home "$home_directory"
 
 print_trust_warning
 echo "Project: $project_directory"
 echo "Starting container: $container_name"
-start_claude_container "$container_name" "$project_directory" "$host_timezone" >/dev/null
+start_claude_container "$container_name" "$project_directory" "$host_timezone" "$home_directory" >/dev/null
 
 printf '%s\n' "$prompt" | docker exec -i -w /workspace "$container_name" \
     claude -p --model claude-opus-5-5 --dangerously-skip-permissions &

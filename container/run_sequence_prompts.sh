@@ -56,10 +56,16 @@ container_name="claude_sequence_${project_name}_$(date +%s)_$$"
 handoff_directory="$project_directory/plan/handoffs"
 workflow_log="$handoff_directory/workflow_log.txt"
 workflow_status="$handoff_directory/workflow_status.txt"
+
 temporary_directory=""
 container_started=0
 workflow_complete=0
 handoff_initialized=0
+
+if git -C "$project_directory" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    && ! git -C "$project_directory" check-ignore -q plan/handoffs/workflow_log.txt; then
+    echo "Warning: plan/handoffs is not ignored by this project. Transcripts can be committed." >&2
+fi
 
 timestamp() {
     date '+%Y-%m-%dT%H:%M:%S%z'
@@ -266,7 +272,9 @@ echo "Prompts: $prompts_file"
 echo "Handoffs: $handoff_directory"
 write_status "STARTED"
 
-start_claude_container "$container_name" "$project_directory" "$host_timezone" >/dev/null
+mkdir "$temporary_directory/home"
+populate_container_home "$temporary_directory/home"
+start_claude_container "$container_name" "$project_directory" "$host_timezone" "$temporary_directory/home" >/dev/null
 container_started=1
 log "Container started."
 

@@ -1,0 +1,9 @@
+{
+  "skipDangerousModePermissionPrompt": true,
+  "permissions": {
+    "deny": [
+      "Read(~/.claude/.credentials.json)",
+      "Edit(~/.claude/.credentials.json)"
+    ]
+  }
+}

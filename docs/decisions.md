@@ -10,7 +10,11 @@ Enforcement lives in `AGENTS.md`.
 
 The container is a convenient isolated runtime for trusted work, not a strong sandbox for untrusted code.
 
-Claude needs network access, project write access, and authentication state for the workflows this repository supports. The launch scripts therefore mount the project and `~/.claude` read-write and bypass Claude permission prompts. On macOS, container authentication must be supplied separately because Docker cannot read the host Keychain. Blocking common Git commands reduces accidental repository operations but cannot stop arbitrary code from reading mounted data or downloading another Git client.
+Claude needs network access, project write access, and authentication for the workflows this repository supports. The launch scripts therefore mount the project read-write and bypass Claude permission prompts. On macOS, container authentication must be supplied separately because Docker cannot read the host Keychain. Blocking common Git commands reduces accidental repository operations but cannot stop arbitrary code from reading mounted data or downloading another Git client.
+
+The host `~/.claude` is not mounted by default. It holds credentials, every session transcript, history, MCP tokens, and settings, and a bypassed session with network access could read or change all of it. Each run gets a new temporary home with only the credentials it needs. Mounting the host config is an explicit opt-in (`CLAUDE_CONTAINER_MOUNT_HOST_CONFIG=1`).
+
+The container runs as the host uid so project files keep their owner and a mode-600 credentials file stays readable. It drops all Linux capabilities and sets `no-new-privileges`. Claude Code refuses bypass mode as root, so the scripts do not fall back to root. Settings that must hold in every container session live in the image at `/etc/claude-code/managed-settings.json`.
 
 The README must state this boundary plainly. Do not describe the runtime as secure against malicious projects or prompts.
 

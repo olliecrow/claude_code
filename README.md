@@ -6,9 +6,8 @@ This repository contains a Docker runtime, reusable agents, slash commands, and 
 
 Requirements:
 
-- Docker
+- Docker (rootful; rootless Docker maps the container user to a different uid)
 - Bash
-- Claude Code configuration in `~/.claude`
 - authentication usable inside Docker
 
 macOS stores an ordinary Claude Code login in Keychain, which a Linux container cannot read. For a Claude subscription, create a long-lived token and keep it in your shell’s secure environment:
@@ -18,7 +17,7 @@ claude setup-token
 export CLAUDE_CODE_OAUTH_TOKEN=...
 ```
 
-API users can instead set `ANTHROPIC_API_KEY`. Linux users with `~/.claude/.credentials.json` do not need either environment variable.
+API users can instead set `ANTHROPIC_API_KEY`. Linux users with `~/.claude/.credentials.json` do not need either environment variable; the launcher copies only that one file into the run.
 
 Build the image and check the local setup.
 
@@ -56,13 +55,15 @@ Run prompts from a file. Separate prompts with blank lines. A `/compact` block s
 
 Use the container only with projects and prompts you trust.
 
-- The project and `~/.claude` are mounted read-write.
+- The project is mounted read-write.
+- Claude's config is a new temporary directory for each run. Host sessions, history, settings, plugins, and MCP config are not visible. Set `CLAUDE_CONTAINER_MOUNT_HOST_CONFIG=1` to mount the host `~/.claude` read-write instead.
+- The container runs as your host uid with all Linux capabilities dropped and `no-new-privileges` set.
 - The container has internet access.
 - Claude runs with permission checks bypassed.
 - Auth environment variables are visible to local Docker inspection while the container runs.
 - Common Git commands are blocked, but this is a guardrail rather than a complete security boundary.
 
-The container limits ordinary filesystem access to its own filesystem and the mounted paths. It does not protect mounted credentials or project data from code or commands run inside it.
+The container limits ordinary filesystem access to its own filesystem and the mounted paths. It does not protect the run's credentials or project data from code or commands run inside it. Deny rules for the credentials file stop Claude's file tools, not every indirect read through Bash.
 
 ## Reusable assets
 
@@ -79,7 +80,7 @@ See [agents/README.md](agents/README.md) and [commands/README.md](commands/READM
 - `docs/`: durable project decisions
 - `scripts/`: repository checks and public-safety checks
 
-Generated handoffs use the ignored `plan/handoffs/` directory in the target project.
+Generated handoffs and transcripts go to `plan/handoffs/` in the target project. The sequence runner warns when that path is not ignored by the project's Git configuration.
 
 ## Development
 
