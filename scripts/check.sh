@@ -23,18 +23,15 @@ shell_scripts=(
     scripts/check_launch.sh
     scripts/security/check-push-range.sh
     scripts/security/check-sensitive-text.sh
+    scripts/security/ci-push-scan.sh
+    scripts/security/ci-range.sh
+    scripts/security/self-test.sh
 )
 
 bash -n "${shell_scripts[@]}"
 shellcheck --severity=style "${shell_scripts[@]}"
 python3 scripts/check_assets.py
 uv lock --check --project container
-
-temporary_directory="$(mktemp -d)"
-cleanup() {
-    rm -rf -- "$temporary_directory"
-}
-trap cleanup EXIT
 
 repository_files=()
 while IFS= read -r -d '' repository_file; do
@@ -45,20 +42,7 @@ bash scripts/security/check-sensitive-text.sh \
     --context=current-tree \
     "${repository_files[@]}"
 
-safe_text="$temporary_directory/safe.txt"
-unsafe_text="$temporary_directory/unsafe.txt"
-printf '%s\n' \
-    'Use /Users/YOU as the documented placeholder.' \
-    'token = self._stage_token(workflow_type)' \
-    > "$safe_text"
-printf 'token=%s\n' 'abc123456789XYZ' > "$unsafe_text"
-
-bash scripts/security/check-sensitive-text.sh --context=self-test "$safe_text"
-if bash scripts/security/check-sensitive-text.sh --context=self-test "$unsafe_text" >/dev/null 2>&1; then
-    echo "Error: sensitive-text self-test did not reject an unsafe value." >&2
-    exit 1
-fi
-
+bash scripts/security/self-test.sh
 bash scripts/check_launch.sh
 
 echo "Repository checks passed."

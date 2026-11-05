@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - main
+  schedule:
+    # Weekly advisory refresh. Version-update bots are not used.
+    - cron: "41 6 * * 1"
 
 permissions:
   contents: read
@@ -26,69 +29,57 @@ jobs:
           version="8.30.1"
           archive="gitleaks_${version}_linux_x64.tar.gz"
           archive_sha256="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
-          curl -sSfL -o "${archive}" "https://github.com/gitleaks/gitleaks/releases/download/v${version}/${archive}"
-          echo "${archive_sha256}  ${archive}" | sha256sum -c -
-          tar -xzf "${archive}"
-          install -m 0755 gitleaks "$RUNNER_TEMP/gitleaks"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          workdir="${RUNNER_TEMP}/gitleaks-install"
+          mkdir -p "${workdir}"
+          curl -sSfL -o "${workdir}/${archive}" "https://github.com/gitleaks/gitleaks/releases/download/v${version}/${archive}"
+          echo "${archive_sha256}  ${workdir}/${archive}" | sha256sum -c -
+          tar -xzf "${workdir}/${archive}" -C "${workdir}"
+          install -m 0755 "${workdir}/gitleaks" "${RUNNER_TEMP}/gitleaks"
+          echo "${RUNNER_TEMP}" >> "$GITHUB_PATH"
 
-      - name: Scan pushed/PR commit range with gitleaks
+      - name: Install osv-scanner
+        run: |
+          set -euo pipefail
+          version="2.7.0"
+          binary="osv-scanner_linux_amd64"
+          binary_sha256="160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b"
+          curl -sSfL -o "${RUNNER_TEMP}/${binary}" "https://github.com/google/osv-scanner/releases/download/v${version}/${binary}"
+          echo "${binary_sha256}  ${RUNNER_TEMP}/${binary}" | sha256sum -c -
+          install -m 0755 "${RUNNER_TEMP}/${binary}" "${RUNNER_TEMP}/osv-scanner"
+          echo "${RUNNER_TEMP}" >> "$GITHUB_PATH"
+
+      - name: Scan pushed commits with gitleaks
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
-          elif [[ "${PUSH_BEFORE_SHA}" == "0000000000000000000000000000000000000000" ]]; then
-            range="${GITHUB_SHA}^!"
-          else
-            range="${PUSH_BEFORE_SHA}..${GITHUB_SHA}"
-          fi
-          gitleaks git --redact --verbose --config .gitleaks.toml --log-opts="${range}"
+          range="$(bash scripts/security/ci-range.sh)"
+          gitleaks git --redact --verbose --config .gitleaks.toml \
+            --log-opts="--diff-merges=first-parent ${range}"
 
-      - name: Self-test sensitive text policy patterns
-        run: |
-          set -euo pipefail
-          tmp_ok="$(mktemp)"
-          tmp_bad="$(mktemp)"
-          printf 'docs: keep /Users/YOU as placeholder only\n' > "${tmp_ok}"
-          printf 'fix: %s=%s\n' "token" "abc123456789XYZ" > "${tmp_bad}"
-          bash scripts/security/check-sensitive-text.sh --context=policy-selftest "${tmp_ok}"
-          if bash scripts/security/check-sensitive-text.sh --context=policy-selftest "${tmp_bad}"; then
-            echo "expected policy self-test failure did not occur" >&2
-            exit 1
-          fi
+      - name: Scan the current tree with gitleaks
+        run: gitleaks dir --redact --verbose --config .gitleaks.toml .
 
-      - name: Self-test sensitive text policy without ripgrep
-        run: |
-          set -euo pipefail
-          tmp_bad="$(mktemp)"
-          printf 'fix: %s=%s\n' "token" "abc123456789XYZ" > "${tmp_bad}"
-          if PATH="/usr/bin:/bin" bash scripts/security/check-sensitive-text.sh --context=policy-fallback-selftest "${tmp_bad}"; then
-            echo "expected fallback policy self-test failure did not occur" >&2
-            exit 1
-          fi
-
-      - name: Check commit messages for policy violations
+      - name: Check commit messages and added lines
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: bash scripts/security/ci-push-scan.sh
+
+      - name: Check tracked files for policy violations
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
-          elif [[ "${PUSH_BEFORE_SHA}" == "0000000000000000000000000000000000000000" ]]; then
-            range="${GITHUB_SHA}^!"
-          else
-            range="${PUSH_BEFORE_SHA}..${GITHUB_SHA}"
-          fi
+          mapfile -d '' tracked_files < <(git ls-files -z)
+          bash scripts/security/check-sensitive-text.sh --context=tracked-file "${tracked_files[@]}"
 
-          temp_file="$(mktemp)"
-          git log --format='%H%n%s%n%b%n' "${range}" > "${temp_file}"
-          bash scripts/security/check-sensitive-text.sh --context=commit-message "${temp_file}"
+      - name: Self-test sensitive text and push range checks
+        run: bash scripts/security/self-test.sh
+
+      - name: Scan dependency locks
+        run: osv-scanner scan source -r .
 
       - name: Check pull request title/body for policy violations
         if: github.event_name == 'pull_request'
