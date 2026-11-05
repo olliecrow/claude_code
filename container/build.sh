@@ -4,24 +4,30 @@ set -euo pipefail
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$script_directory"
 
-include_build_tools=1
-include_extra_tools=1
+usage() {
+    echo "Usage: $(basename "$0") [--minimal] [--no-cache]"
+}
 
-if [[ "$#" -gt 1 ]]; then
-    echo "Usage: $(basename "$0") [--minimal]" >&2
-    exit 1
-fi
+full_image=1
+cache_arguments=()
 
-if [[ "${1:-}" == "--minimal" ]]; then
-    include_build_tools=0
-    include_extra_tools=0
-elif [[ "$#" -eq 1 ]]; then
-    echo "Error: unsupported option: $1" >&2
-    echo "Usage: $(basename "$0") [--minimal]" >&2
-    exit 1
-fi
+for argument in "$@"; do
+    case "$argument" in
+        --minimal)
+            full_image=0
+            ;;
+        --no-cache)
+            cache_arguments=(--no-cache)
+            ;;
+        *)
+            echo "Error: unsupported option: $argument" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
 
-if [[ "$include_build_tools" -eq 1 ]]; then
+if [[ "$full_image" -eq 1 ]]; then
     echo "Building the full claude_code_container image."
 else
     echo "Building the minimal claude_code_container image."
@@ -29,9 +35,8 @@ fi
 
 docker build \
     --pull \
-    --no-cache \
-    --build-arg "INCLUDE_BUILD_TOOLS=$include_build_tools" \
-    --build-arg "INCLUDE_EXTRA_TOOLS=$include_extra_tools" \
+    ${cache_arguments[@]+"${cache_arguments[@]}"} \
+    --build-arg "FULL_IMAGE=$full_image" \
     --tag claude_code_container \
     .
 

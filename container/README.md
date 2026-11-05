@@ -13,9 +13,12 @@ Subscription users can run `claude setup-token`, store the result securely, and 
 ```bash
 ./build.sh
 ./build.sh --minimal
+./build.sh --no-cache
 ```
 
-The full image includes native build tools, Rust, Python data tools, ffmpeg, and debugging tools. The minimal image omits the optional compiler and debugger groups.
+Both images contain Claude Code 2.1.311, uv, Python 3.12, and ripgrep. The full image adds native build tools, debuggers, Node.js 22, Rust, ffmpeg, and Python data tools (Jupyter, NumPy, pandas, and others) on `PATH`. The minimal image has none of those.
+
+Every download is pinned by version and SHA-256 checksum in the `Dockerfile`. To move a version, change the version and its checksums together. Builds use the Docker cache; pass `--no-cache` to refresh Debian packages.
 
 ## Check and preview
 
