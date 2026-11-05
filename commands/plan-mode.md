@@ -1,5 +1,7 @@
 ---
 description: Create an evidence-based plan without implementing it
+disable-model-invocation: true
+disallowed-tools: Edit, Write, NotebookEdit
 ---
 
 # Plan

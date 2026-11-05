@@ -1,5 +1,6 @@
 ---
 description: Remove confirmed stale or temporary artifacts safely
+disable-model-invocation: true
 ---
 
 # Cleanup

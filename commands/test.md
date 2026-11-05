@@ -1,5 +1,6 @@
 ---
 description: Run existing tests and quality gates and report the evidence without fixing failures
+disable-model-invocation: true
 ---
 
 # Test

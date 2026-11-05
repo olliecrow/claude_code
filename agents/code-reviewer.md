@@ -2,6 +2,7 @@
 name: code-reviewer
 description: Review a change or codebase for correctness, security, broken contracts, and merge risk
 model: claude-opus-5-5
+disallowedTools: Edit, Write, NotebookEdit
 ---
 
 # Code reviewer

@@ -2,6 +2,7 @@
 name: online-researcher
 description: Research a current external question with authoritative web sources and clear citations
 model: claude-opus-5-5
+disallowedTools: Edit, Write, NotebookEdit
 ---
 
 # Online researcher

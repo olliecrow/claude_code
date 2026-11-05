@@ -2,6 +2,7 @@
 name: large-file-reader
 description: Read a file too large for one context window with systematic coverage and traceable findings
 model: claude-opus-5-5
+disallowedTools: Edit, Write, NotebookEdit
 ---
 
 # Large-file reader

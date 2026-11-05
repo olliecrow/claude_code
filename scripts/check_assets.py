@@ -78,6 +78,10 @@ def validate_command(path: Path) -> list[str]:
     errors: list[str] = []
     if not frontmatter.get("description"):
         errors.append(f"{path.relative_to(ROOT)}: description is required")
+    if frontmatter.get("disable-model-invocation") != "true":
+        errors.append(
+            f"{path.relative_to(ROOT)}: disable-model-invocation must be true"
+        )
 
     lowered = text.lower()
     for forbidden_text in FORBIDDEN_TEXT:

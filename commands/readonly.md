@@ -1,6 +1,8 @@
 ---
 description: Inspect and report without changing files or external state
 allowed-tools: Read, Glob, Grep, WebFetch, WebSearch
+disable-model-invocation: true
+disallowed-tools: Edit, Write, NotebookEdit
 ---
 
 # Read-only task

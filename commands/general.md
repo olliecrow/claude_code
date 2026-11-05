@@ -1,5 +1,6 @@
 ---
 description: Complete a requested task with proportionate planning, implementation, and verification
+disable-model-invocation: true
 ---
 
 # General task

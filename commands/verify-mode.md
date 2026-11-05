@@ -1,5 +1,6 @@
 ---
 description: Verify a claim or completed change with evidence
+disable-model-invocation: true
 ---
 
 # Verify

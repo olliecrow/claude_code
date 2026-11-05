@@ -2,6 +2,7 @@
 name: documentation-finder
 description: Locate authoritative documentation needed to answer a concrete technical or operational question
 model: claude-opus-5-5
+disallowedTools: Edit, Write, NotebookEdit
 ---
 
 # Documentation finder
