@@ -64,8 +64,8 @@ container_id_file=""
 workflow_complete=0
 handoff_initialized=0
 
-if git -C "$project_directory" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-    && ! git -C "$project_directory" check-ignore -q plan/handoffs/workflow_log.txt; then
+if git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$project_directory" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    && ! git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$project_directory" check-ignore -q plan/handoffs/workflow_log.txt; then
     echo "Warning: plan/handoffs is not ignored by this project. Transcripts can be committed." >&2
 fi
 

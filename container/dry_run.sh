@@ -62,7 +62,7 @@ $auth_forward
 
 Planned sequence:
 1. Start claude_code_container with bridge networking, as uid $(id -u), with all capabilities dropped.
-2. Mount the project at /workspace.
+2. Mount the project at /workspace; mount its .git read-only if present (directory or worktree file).
 3. $config_mount
 4. $action.
 5. Remove the container and the temporary home when the session ends.

@@ -55,7 +55,7 @@ Run prompts from a file. Separate prompts with blank lines. A `/compact` block s
 
 Use the container only with projects and prompts you trust.
 
-- The project is mounted read-write.
+- The project is mounted read-write. Existing `.git` metadata (directory or worktree file) is mounted read-only, so Claude cannot commit; review changed project files before running them on the host.
 - Claude's config is a new temporary directory for each run. Host sessions, history, settings, plugins, and MCP config are not visible. Set `CLAUDE_CONTAINER_MOUNT_HOST_CONFIG=1` to mount the host `~/.claude` read-write instead.
 - The container runs as your host uid with all Linux capabilities dropped and `no-new-privileges` set.
 - The container has internet access.

@@ -164,6 +164,12 @@ start_claude_container() {
 
     require_mount_safe_path "$project_directory" || return 1
     require_mount_safe_path "$home_directory" || return 1
+    # Mask Git metadata after the writable project mount. A worktree has a
+    # .git file; its external metadata is not added to the container mounts.
+    if [[ -e "$project_directory/.git" ]]; then
+        require_mount_safe_path "$project_directory/.git" || return 1
+        docker_arguments+=(--mount "type=bind,source=$project_directory/.git,target=/workspace/.git,readonly")
+    fi
     if mounts_host_config; then
         require_mount_safe_path "$HOME/.claude" || return 1
         docker_arguments+=(--mount "type=bind,source=$HOME/.claude,target=$container_home/.claude")

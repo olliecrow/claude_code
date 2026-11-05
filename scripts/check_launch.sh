@@ -117,6 +117,40 @@ assert_args_have "$oauth_args" "CLAUDE_CODE_OAUTH_TOKEN"
 assert_args_have "$oauth_args" "--cidfile"
 assert_args_lack "$oauth_args" "ANTHROPIC_API_KEY"
 
+# Existing Git directories and worktree files must be masked read-only.
+for git_kind in directory file absent; do
+    git_project="$scratch/git-$git_kind"
+    mkdir "$git_project"
+    case "$git_kind" in
+        directory) mkdir "$git_project/.git" ;;
+        file) printf 'gitdir: ../external-metadata\n' > "$git_project/.git" ;;
+    esac
+    git_args="$scratch/git-$git_kind.txt"
+    (record_docker_args "$git_args" name "$git_project" "" "$scratch/mount")
+    mount="type=bind,source=$git_project/.git,target=/workspace/.git,readonly"
+    if [[ "$git_kind" == absent ]]; then
+        assert_args_lack "$git_args" "$mount"
+    else
+        assert_args_have "$git_args" "$mount"
+        project_line="$(grep -nFx "type=bind,source=$git_project,target=/workspace" "$git_args" | cut -d: -f1)"
+        git_line="$(grep -nFx "$mount" "$git_args" | cut -d: -f1)"
+        [[ "$git_line" -gt "$project_line" ]] || fail "Git mask precedes project mount"
+    fi
+done
+
+# A planted fsmonitor must never run on the host during sequence preflight.
+git init -q "$project"
+printf '#!/bin/sh\ntouch "%s"\n' "$scratch/fsmonitor-ran" > "$scratch/fsmonitor"
+chmod 755 "$scratch/fsmonitor"
+git -C "$project" config core.fsmonitor "$scratch/fsmonitor"
+# Stop after Git preflight without starting Docker or using real credentials.
+if env HOME="$scratch/dry-home" CLAUDE_TIMEOUT_SECONDS=1 \
+    bash "$repository_root/container/run_sequence_prompts.sh" "$project" "$scratch/prompts.txt" \
+    > "$scratch/preflight.out" 2>&1; then
+    fail "preflight without authentication passed"
+fi
+[[ ! -e "$scratch/fsmonitor-ran" ]] || fail "host ran planted fsmonitor"
+
 api_args="$scratch/api-args.txt"
 (
     # shellcheck disable=SC2031
