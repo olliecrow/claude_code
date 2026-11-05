@@ -91,6 +91,14 @@ case "$1" in
 esac
 EOF
 chmod 755 "$mock_bin/docker"
+# The launchers must never run host Git. The container can plant Git metadata
+# (a submodule .git file, or a new .git) that host Git would trust.
+cat > "$mock_bin/git" <<'EOF'
+#!/usr/bin/env bash
+printf 'host-git %s\n' "$*" >> "${DOCKER_MOCK_LOG:?}"
+exit 1
+EOF
+chmod 755 "$mock_bin/git"
 
 assert_args_have() {
     local args_file="$1"
@@ -151,19 +159,6 @@ for git_kind in directory file absent; do
         [[ "$git_line" -gt "$project_line" ]] || fail "Git mask precedes project mount"
     fi
 done
-
-# A planted fsmonitor must never run on the host during sequence preflight.
-git init -q "$project"
-printf '#!/bin/sh\ntouch "%s"\n' "$scratch/fsmonitor-ran" > "$scratch/fsmonitor"
-chmod 755 "$scratch/fsmonitor"
-git -C "$project" config core.fsmonitor "$scratch/fsmonitor"
-# Stop after Git preflight without starting Docker or using real credentials.
-if env HOME="$scratch/dry-home" CLAUDE_TIMEOUT_SECONDS=1 \
-    bash "$repository_root/container/run_sequence_prompts.sh" "$project" "$scratch/prompts.txt" \
-    > "$scratch/preflight.out" 2>&1; then
-    fail "preflight without authentication passed"
-fi
-[[ ! -e "$scratch/fsmonitor-ran" ]] || fail "host ran planted fsmonitor"
 
 api_args="$scratch/api-args.txt"
 (
@@ -237,6 +232,9 @@ run_launcher() {
         "${command[@]}" "$@" \
         > "$case_dir/stdout" 2> "$case_dir/stderr" || status=$?
     printf '%s\n' "$status"
+    if grep -F 'host-git' "$log" >/dev/null 2>&1; then
+        fail "${script_name} ${mode} ran host Git"
+    fi
     if [[ -n "$(find "$temp_root" -mindepth 1 -print -quit)" ]]; then
         fail "${script_name} ${mode} left a temporary directory"
     fi
@@ -287,6 +285,8 @@ for launcher in run.sh run_command.sh run_sequence_prompts.sh; do
     [[ "$success_status" -eq 0 ]] || fail "$launcher did not exec recorded ID"
     grep -Fx "exec $container_id" "$scratch/case-success-$launcher/docker.log" >/dev/null || fail "exec was not called"
 done
+
+[[ "$(cat "$project/plan/handoffs/.gitignore")" == '*' ]] || fail "handoffs are not ignored"
 
 grep -Fx 'COPY --chmod=0644 managed-settings.json /etc/claude-code/managed-settings.json' \
     "$repository_root/container/Dockerfile" >/dev/null || fail "managed settings mode is not fixed"

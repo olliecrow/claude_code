@@ -55,7 +55,8 @@ Run prompts from a file. Separate prompts with blank lines. A `/compact` block s
 
 Use the container only with projects and prompts you trust.
 
-- The project is mounted read-write. Existing `.git` metadata (directory or worktree file) is mounted read-only, so Claude cannot commit; review changed project files before running them on the host.
+- The project is mounted read-write; review changed project files before running them on the host. The top-level `.git` (directory or worktree file) is mounted read-only, so Claude cannot commit, and the launchers never run host Git.
+- Residual risk: the container can still write submodule `.git` files and nested Git metadata, or create Git metadata in a project with no `.git`, and host Git runs commands named there; until you have reviewed a run's changes, run host Git only from the project root with `--ignore-submodules=all`, and not at all in a project that had no `.git`.
 - Claude's config is a new temporary directory for each run. Host sessions, history, settings, plugins, and MCP config are not visible. Set `CLAUDE_CONTAINER_MOUNT_HOST_CONFIG=1` to mount host skills, agents, commands, settings, and plugins from `~/.claude` read-write; user MCP servers in `~/.claude.json` and host session resume do not carry over.
 - The container runs as your host uid with all Linux capabilities dropped and `no-new-privileges` set.
 - The container has internet access.
@@ -80,7 +81,7 @@ See [agents/README.md](agents/README.md) and [commands/README.md](commands/READM
 - `docs/`: durable project decisions
 - `scripts/`: repository checks and public-safety checks
 
-Generated handoffs and transcripts go to `plan/handoffs/` in the target project. The sequence runner warns when that path is not ignored by the project's Git configuration.
+Generated handoffs and transcripts go to `plan/handoffs/` in the target project. The sequence runner adds a `.gitignore` there, so Git ignores them.
 
 ## Development
 

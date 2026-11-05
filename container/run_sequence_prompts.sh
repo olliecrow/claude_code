@@ -64,11 +64,6 @@ container_id_file=""
 workflow_complete=0
 handoff_initialized=0
 
-if git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$project_directory" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-    && ! git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$project_directory" check-ignore -q plan/handoffs/workflow_log.txt; then
-    echo "Warning: plan/handoffs is not ignored by this project. Transcripts can be committed." >&2
-fi
-
 timestamp() {
     date '+%Y-%m-%dT%H:%M:%S%z'
 }
@@ -140,6 +135,11 @@ temporary_directory="$(mktemp -d)"
 container_id_file="$temporary_directory/container.id"
 trap cleanup EXIT
 mkdir -p "$handoff_directory"
+# Keep transcripts out of commits. The runner never runs host Git, because the
+# container can write Git metadata in the project.
+if [[ ! -e "$handoff_directory/.gitignore" ]]; then
+    printf '*\n' > "$handoff_directory/.gitignore"
+fi
 : > "$workflow_log"
 handoff_initialized=1
 
