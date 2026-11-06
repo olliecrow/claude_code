@@ -13,6 +13,7 @@ Usage:
 
 Blank lines separate prompts. Lines beginning with # are comments.
 A prompt beginning with /compact starts a fresh conversation with a handoff.
+The private handoff directory is printed at the end. It is outside the project.
 EOF
 }
 
@@ -55,9 +56,10 @@ prompts_file="$(cd "$(dirname "$prompts_path")" && pwd -P)/$(basename "$prompts_
 host_timezone="$(detect_host_timezone)"
 project_name="$(safe_container_component "$(basename "$project_directory")")"
 container_name="claude_sequence_${project_name}_$(date +%s)_$$"
-handoff_directory="$project_directory/plan/handoffs"
 
-temporary_directory=""
+run_directory=""
+home_directory=""
+work_directory=""
 private_handoff_directory=""
 workflow_log=""
 workflow_status=""
@@ -79,61 +81,24 @@ write_status() {
     printf '%s %s\n' "$status" "$(timestamp)" > "$workflow_status"
 }
 
-# Copies this run's handoff files into the project. Call it only after the
-# container is removed, so it cannot swap files during the copy. The container
-# could have planted links in plan/handoffs: a linked directory is refused,
-# and a link or file in the way is replaced, never followed.
-publish_handoffs() {
-    local directory_path=""
-    local source_file=""
-    local destination_file=""
-
-    for directory_path in "$project_directory/plan" "$handoff_directory"; do
-        if [[ -L "$directory_path" ]]; then
-            echo "Error: $directory_path is a link; handoffs were not saved." >&2
-            return 1
-        fi
-        if [[ ! -d "$directory_path" ]]; then
-            mkdir -- "$directory_path" || return 1
-        fi
-    done
-    # Keep transcripts out of commits without running host Git.
-    if [[ ! -e "$handoff_directory/.gitignore" && ! -L "$handoff_directory/.gitignore" ]]; then
-        printf '*\n' > "$handoff_directory/.gitignore"
-    fi
-    for source_file in "$private_handoff_directory"/*; do
-        [[ -f "$source_file" ]] || continue
-        destination_file="$handoff_directory/${source_file##*/}"
-        # Replace any link, file, or FIFO so cp neither follows nor blocks on it.
-        if [[ -L "$destination_file" ]] || [[ -e "$destination_file" && ! -d "$destination_file" ]]; then
-            rm -f -- "$destination_file"
-        fi
-        cp -- "$source_file" "$destination_file" || return 1
-    done
-}
-
 cleanup() {
     local exit_code=$?
 
-    if [[ -n "$container_id_file" ]]; then
-        remove_recorded_container "$container_id_file"
+    if [[ "$handoff_initialized" -eq 1 && "$workflow_complete" -eq 0 ]]; then
+        write_status "FAILED" || true
+        log "Workflow failed with status $exit_code." || true
     fi
-
+    if [[ -n "$run_directory" ]]; then
+        if ! release_recorded_container "$run_directory"; then
+            echo "Error: container removal was not confirmed. Kept $run_directory" >&2
+            if [[ "$exit_code" -eq 0 ]]; then
+                exit_code=1
+            fi
+        fi
+    fi
     if [[ "$handoff_initialized" -eq 1 ]]; then
-        if [[ "$workflow_complete" -eq 0 ]]; then
-            write_status "FAILED" || true
-            log "Workflow failed with status $exit_code." || true
-        fi
-        if ! publish_handoffs; then
-            echo "Error: could not save handoffs to $handoff_directory." >&2
-            [[ "$exit_code" -ne 0 ]] || exit_code=1
-        fi
+        printf 'Handoffs: %s\n' "$private_handoff_directory"
     fi
-
-    if [[ -n "$temporary_directory" ]]; then
-        rm -rf -- "$temporary_directory"
-    fi
-
     exit "$exit_code"
 }
 
@@ -172,15 +137,15 @@ fi
 require_claude_auth
 require_docker
 
-temporary_directory="$(mktemp -d)"
-container_id_file="$temporary_directory/container.id"
-trap cleanup EXIT
-# The container can write the project, so handoffs stay in this private
-# directory during the run and are copied to the project at the end.
-private_handoff_directory="$temporary_directory/handoffs"
+run_directory="$(private_run_directory "$project_directory")" || exit 1
+home_directory="$run_directory/home"
+work_directory="$run_directory/work"
+container_id_file="$run_directory/container.id"
+private_handoff_directory="$run_directory/handoffs"
 workflow_log="$private_handoff_directory/workflow_log.txt"
 workflow_status="$private_handoff_directory/workflow_status.txt"
-mkdir "$private_handoff_directory"
+trap cleanup EXIT
+mkdir -m 700 "$home_directory" "$work_directory" "$private_handoff_directory"
 : > "$workflow_log"
 handoff_initialized=1
 
@@ -274,7 +239,7 @@ run_conversation() {
     local conversation_prompts=("$@")
     local transcript_file="$private_handoff_directory/conversation_${conversation_number}.txt"
     local handoff_file="$private_handoff_directory/conversation_${conversation_number}_handoff.txt"
-    local session_file="$temporary_directory/session_${conversation_number}.txt"
+    local session_file="$work_directory/session_${conversation_number}.txt"
     local json_file=""
     local result_file=""
     local session_id=""
@@ -301,8 +266,8 @@ Current task:
 $prompt_text"
         fi
 
-        json_file="$temporary_directory/conversation_${conversation_number}_${response_number}.json"
-        result_file="$temporary_directory/conversation_${conversation_number}_${response_number}.txt"
+        json_file="$work_directory/conversation_${conversation_number}_${response_number}.json"
+        result_file="$work_directory/conversation_${conversation_number}_${response_number}.txt"
         run_claude_turn "$full_prompt" "$session_id" "$json_file"
         read_claude_result "$json_file" "$result_file" "$session_file"
         if [[ -z "$session_id" ]]; then
@@ -313,7 +278,7 @@ $prompt_text"
         response_number=$((response_number + 1))
     done
 
-    json_file="$temporary_directory/conversation_${conversation_number}_handoff.json"
+    json_file="$work_directory/conversation_${conversation_number}_handoff.json"
     run_claude_turn "$(handoff_prompt)" "$session_id" "$json_file"
     read_claude_result "$json_file" "$handoff_file" "$session_file"
     previous_handoff="$(< "$handoff_file")"
@@ -324,12 +289,11 @@ $prompt_text"
 print_trust_warning
 echo "Project: $project_directory"
 echo "Prompts: $prompts_file"
-echo "Handoffs: $handoff_directory (saved when the run ends)"
+printf 'Handoffs: %s\n' "$private_handoff_directory"
 write_status "STARTED"
 
-mkdir "$temporary_directory/home"
-populate_container_home "$temporary_directory/home"
-start_claude_container "$container_name" "$project_directory" "$host_timezone" "$temporary_directory/home" "$container_id_file" >/dev/null
+populate_container_home "$home_directory"
+start_claude_container "$container_name" "$project_directory" "$host_timezone" "$home_directory" "$container_id_file" >/dev/null
 log "Container started."
 
 conversation_number=1

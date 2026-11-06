@@ -63,6 +63,7 @@ Use the container only with projects and prompts you trust.
 - Claude runs with permission checks bypassed.
 - Only the auth variable in use is forwarded. It is visible to local Docker inspection while the container runs.
 - Common Git commands are blocked, but this is a guardrail rather than a complete security boundary.
+- Sequence handoffs stay in a private host directory outside the project. The script does not copy them back. If Docker cannot show that this run's container is gone, the script exits non-zero and leaves that directory in place.
 
 The container limits ordinary filesystem access to its own filesystem and the mounted paths. It does not protect the run's credentials or project data from code or commands run inside it. Deny rules for the credentials file stop Claude's file tools, not every indirect read through Bash.
 
@@ -81,7 +82,7 @@ See [agents/README.md](agents/README.md) and [commands/README.md](commands/READM
 - `docs/`: durable project decisions
 - `scripts/`: repository checks and public-safety checks
 
-Generated handoffs and transcripts go to `plan/handoffs/` in the target project when the run ends. The sequence runner adds a `.gitignore` there, so Git ignores them.
+Generated handoffs and transcripts stay outside the project, under `${XDG_STATE_HOME:-$HOME/.local/state}/claude_code/runs/<run>/handoffs`. The script prints that path. The directory mode is `0700`. Nothing is written into the project for the handoff.
 
 ## Development
 

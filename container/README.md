@@ -46,7 +46,7 @@ The prompt file format is:
 - a prompt beginning with `/compact` ends the current conversation;
 - text after `/compact` becomes the first prompt in the new conversation.
 
-Handoffs and logs are copied to the target project’s `plan/handoffs/` directory when the run ends; during the run they stay in a private host directory, so the container cannot redirect host writes with links. The runner adds a `.gitignore` there (unless one exists), so Git ignores them.
+Handoffs and logs stay on the host under `${XDG_STATE_HOME:-$HOME/.local/state}/claude_code/runs/<run>/handoffs` (mode `0700`). The script prints that path. They are not copied into the project, so links in the project cannot redirect those writes. If container removal is not confirmed, the script exits non-zero and leaves the run directory, including the container id file.
 
 Each run uses a new temporary home at `/home/dev` and deletes it afterwards, so sessions do not carry over between runs. To use your host skills, agents, commands, settings, and plugins, set `CLAUDE_CONTAINER_MOUNT_HOST_CONFIG=1`. That mounts `~/.claude` read-write. User MCP servers in `~/.claude.json` and host session resume do not carry over. Container sessions use the `/workspace` path for every project.
 
@@ -54,4 +54,4 @@ Each run uses a new temporary home at `/home/dev` and deletes it afterwards, so 
 
 ## Important security limits
 
-The project is mounted read-write, the container has network access, and Claude runs with permission checks bypassed. The container runs as your host uid with all Linux capabilities dropped. Only the auth variable in use is forwarded, and that value remains visible to local Docker inspection until the container is removed. A failed startup still removes the container this run created. Use only trusted projects and prompts. Git and GitHub CLI command names are blocked to prevent common accidental changes, but the block is not a security boundary.
+The project is mounted read-write, the container has network access, and Claude runs with permission checks bypassed. The container runs as your host uid with all Linux capabilities dropped. Only the auth variable in use is forwarded, and that value remains visible to local Docker inspection until the container is removed. A failed startup still removes the container this run created when removal is confirmed. If it is not, the private run directory is kept. Use only trusted projects and prompts. Git and GitHub CLI command names are blocked to prevent common accidental changes, but the block is not a security boundary.

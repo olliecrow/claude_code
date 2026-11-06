@@ -65,7 +65,7 @@ Planned sequence:
 2. Mount the project at /workspace; mount its top-level .git read-only if present (directory or worktree file).
 3. $config_mount
 4. $action.
-5. Remove the container and the temporary home when the session ends.
+5. Remove the container, then the temporary home, when removal is confirmed.
 
 No Docker command was run and no project file was changed.
 EOF

@@ -239,21 +239,119 @@ wait_for_pid() {
     wait "$process_id"
 }
 
-# Removes the container recorded by docker run --cidfile. A missing or empty
-# file means this run did not create a container, so nothing is removed.
+# Creates a 0700 run directory outside the project and prints its path.
+# The container can write every project path, so this directory must not be
+# inside the project and the caller must not copy results back into it.
+private_run_directory() {
+    local project_directory="$1"
+    local state_root="${XDG_STATE_HOME:-$HOME/.local/state}/claude_code/runs"
+    local existing=""
+    local resolved=""
+    local intended=""
+
+    case "$state_root" in
+        /*) ;;
+        *) state_root="$(pwd -P)/$state_root" ;;
+    esac
+
+    existing="$state_root"
+    while [[ ! -d "$existing" ]]; do
+        if [[ "$existing" == "/" ]]; then
+            echo "Error: cannot create the private run directory." >&2
+            return 1
+        fi
+        existing="$(dirname -- "$existing")"
+    done
+    resolved="$(cd -- "$existing" && pwd -P)" || return 1
+    intended="${resolved}${state_root#"${existing}"}"
+    case "$intended/" in
+        "$project_directory/"*)
+            echo "Error: the private run directory would be inside the project." >&2
+            return 1
+            ;;
+    esac
+    mkdir -p -- "$intended" || return 1
+    chmod 700 -- "$intended" || return 1
+    mktemp -d "$intended/run.XXXXXXXX"
+}
+
+# Removes the container recorded by docker run --cidfile.
+# A missing or empty file means this run did not create a container.
+# Returns 1 for an invalid id, a removal error, or a daemon that cannot show
+# this exact id is gone. Never removes by name.
 remove_recorded_container() {
     local container_id_file="$1"
     local container_id=""
 
+    if [[ ! -e "$container_id_file" && ! -L "$container_id_file" ]]; then
+        return 0
+    fi
+    if [[ -L "$container_id_file" || ! -f "$container_id_file" ]]; then
+        echo "Error: container id file is not a regular file." >&2
+        return 1
+    fi
     if [[ ! -s "$container_id_file" ]]; then
         return 0
     fi
     container_id="$(tr -d '[:space:]' < "$container_id_file")"
     if [[ ! "$container_id" =~ ^[0-9a-fA-F]{64}$ ]]; then
         echo "Error: container id file did not contain a container id." >&2
+        return 1
+    fi
+    if docker rm -f "$container_id" >/dev/null 2>&1; then
         return 0
     fi
-    docker rm -f "$container_id" >/dev/null 2>&1 || true
+    # The container is gone only when the daemon is up and names this id as
+    # missing. Any other inspect result is not proof, and its output is discarded.
+    if docker info >/dev/null 2>&1; then
+        local inspect_status=0
+        local inspect_error=""
+        inspect_error="$(docker container inspect "$container_id" 2>&1 >/dev/null)" || inspect_status=$?
+        if [[ "$inspect_status" -ne 0 ]]; then
+            case "$inspect_error" in
+                *"No such container"* | *"No such object"*)
+                    return 0
+                    ;;
+            esac
+        fi
+    fi
+    echo "Error: container ${container_id} may still be running. Id file: ${container_id_file}" >&2
+    return 1
+}
+
+# After removal is confirmed, delete the container home, scratch work, and id
+# file. Leave handoffs in place. Return 1 without deleting when removal is not
+# confirmed, so the id file remains for a later retry.
+release_recorded_container() {
+    local run_directory="$1"
+    local child=""
+
+    if [[ -z "$run_directory" || -L "$run_directory" || ! -d "$run_directory" ]]; then
+        echo "Error: run directory is missing." >&2
+        return 1
+    fi
+    if [[ -e "$run_directory/container.id" || -L "$run_directory/container.id" ]]; then
+        remove_recorded_container "$run_directory/container.id" || return 1
+    fi
+    for child in home work; do
+        if [[ -L "$run_directory/$child" ]]; then
+            echo "Error: refusing to delete a link in the run directory." >&2
+            return 1
+        fi
+        if [[ -d "$run_directory/$child" ]]; then
+            rm -r -- "${run_directory:?}/${child:?}" || return 1
+        fi
+    done
+    if [[ -L "$run_directory/container.id" ]]; then
+        echo "Error: refusing to delete a link in the run directory." >&2
+        return 1
+    fi
+    if [[ -f "$run_directory/container.id" ]]; then
+        rm -- "$run_directory/container.id" || return 1
+    fi
+    if [[ -z "$(find "$run_directory" -mindepth 1 -print -quit)" ]]; then
+        rmdir -- "$run_directory" || return 1
+    fi
 }
 
 print_trust_warning() {

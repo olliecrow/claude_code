@@ -42,19 +42,24 @@ home_directory=""
 container_id_file=""
 
 cleanup() {
-    if [[ -n "$container_id_file" ]]; then
-        remove_recorded_container "$container_id_file"
-    fi
+    local exit_code=$?
+
     if [[ -n "$run_directory" ]]; then
-        rm -rf -- "$run_directory"
+        if ! release_recorded_container "$run_directory"; then
+            echo "Error: container removal was not confirmed. Kept $run_directory" >&2
+            if [[ "$exit_code" -eq 0 ]]; then
+                exit_code=1
+            fi
+        fi
     fi
+    exit "$exit_code"
 }
 
-run_directory="$(mktemp -d)"
+run_directory="$(private_run_directory "$project_directory")" || exit 1
 home_directory="$run_directory/home"
 container_id_file="$run_directory/container.id"
 trap cleanup EXIT
-mkdir "$home_directory"
+mkdir -m 700 "$home_directory"
 populate_container_home "$home_directory"
 
 print_trust_warning

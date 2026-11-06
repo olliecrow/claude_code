@@ -18,6 +18,35 @@ fail() {
     exit 1
 }
 
+mode_of() {
+    python3 -c 'import os, sys; print(format(os.stat(sys.argv[1]).st_mode & 0o777, "03o"))' "$1"
+}
+
+set_run_dir() {
+    local case_dir="$1"
+    local found=()
+    shopt -s nullglob
+    found=("$case_dir"/xdg/claude_code/runs/run.*)
+    shopt -u nullglob
+    [[ "${#found[@]}" -eq 1 ]] || fail "expected one private run directory in ${case_dir}, found ${#found[@]}"
+    run_dir="${found[0]}"
+}
+
+assert_private_handoffs() {
+    local dir="$1"
+    [[ "$(mode_of "$dir")" == 700 ]] || fail "run directory is not private"
+    [[ "$(mode_of "$dir/handoffs")" == 700 ]] || fail "handoff directory is not private"
+    [[ "$(mode_of "$(dirname -- "$dir")")" == 700 ]] || fail "run parent is not private"
+    [[ -f "$dir/handoffs/conversation_1.txt" && ! -L "$dir/handoffs/conversation_1.txt" ]] ||
+        fail "transcript was not kept"
+    [[ -f "$dir/handoffs/conversation_1_handoff.txt" && ! -L "$dir/handoffs/conversation_1_handoff.txt" ]] ||
+        fail "handoff was not kept"
+    grep -F 'done' "$dir/handoffs/conversation_1.txt" >/dev/null || fail "transcript was not saved"
+    grep -F 'COMPLETED' "$dir/handoffs/workflow_status.txt" >/dev/null || fail "status was not saved"
+    [[ ! -e "$dir/home" && ! -e "$dir/work" && ! -e "$dir/container.id" ]] ||
+        fail "container home was kept after removal"
+}
+
 container_id="$(printf 'ab%.0s' {1..32})"
 [[ "${#container_id}" -eq 64 ]] || fail "container id fixture length"
 
@@ -35,6 +64,17 @@ mode="${DOCKER_MOCK_MODE:?}"
 state="${DOCKER_MOCK_STATE:?}"
 case "$1" in
     info)
+        count_file="$state/info-count"
+        count=0
+        if [[ -f "$count_file" ]]; then
+            count="$(cat "$count_file")"
+        fi
+        count=$((count + 1))
+        printf '%s\n' "$count" > "$count_file"
+        if [[ "$mode" == daemon-down && "$count" -gt 2 ]]; then
+            echo "Cannot connect to the Docker daemon" >&2
+            exit 1
+        fi
         if [[ "$mode" == rootless ]]; then
             printf '[name=rootless]\n'
         fi
@@ -53,7 +93,14 @@ case "$1" in
             fi
             previous="$argument"
         done
-        if [[ "$mode" == "start-fail" || "$mode" == success || "$mode" == plant ]]; then
+        if [[ "$mode" == bad-id ]]; then
+            [[ -n "$cidfile" ]] || exit 2
+            printf 'not-an-id\n' > "$cidfile"
+            printf '%s\n' "$cidfile" > "$state/cidfile-path"
+            printf 'created\n' >> "$log"
+            exit 0
+        fi
+        if [[ "$mode" == "start-fail" || "$mode" == success || "$mode" == plant || "$mode" == directory || "$mode" == fifo || "$mode" == linked || "$mode" == rm-fail || "$mode" == daemon-down || "$mode" == absent || "$mode" == inspect-fail ]]; then
             [[ -n "$cidfile" ]] || exit 2
             printf '%s\n' "${DOCKER_MOCK_ID:?}" > "$cidfile"
             printf '%s\n' "$cidfile" > "$state/cidfile-path"
@@ -80,14 +127,39 @@ case "$1" in
         exit 0
         ;;
     rm)
-        printf 'removed %s\n' "${3:-}" >> "$log"
+        id="${3:-}"
+        if [[ ! "$id" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            printf 'removed-by-name %s\n' "$id" >> "$log"
+            exit 2
+        fi
         cidfile="$(cat "$state/cidfile-path")"
         if [[ -d "$(dirname "$cidfile")/home" ]]; then
             printf 'home-present\n' >> "$log"
         else
             printf 'home-missing\n' >> "$log"
         fi
+        if [[ "$mode" == rm-fail || "$mode" == daemon-down || "$mode" == absent || "$mode" == inspect-fail ]]; then
+            printf 'rm-failed %s\n' "$id" >> "$log"
+            exit 1
+        fi
+        printf 'removed %s\n' "$id" >> "$log"
         exit 0
+        ;;
+    container)
+        if [[ "${2:-}" == inspect ]]; then
+            printf 'inspect %s\n' "${3:-}" >> "$log"
+            if [[ "$mode" == rm-fail ]]; then
+                exit 0
+            fi
+            if [[ "$mode" == inspect-fail ]]; then
+                echo "Error: service unavailable" >&2
+                exit 1
+            fi
+            echo "Error: No such container: ${3:-}" >&2
+            exit 1
+        fi
+        printf 'unexpected %s\n' "$1" >> "$log"
+        exit 2
         ;;
     *)
         printf 'unexpected %s\n' "$1" >> "$log"
@@ -225,9 +297,14 @@ run_launcher() {
     if [[ "$script_name" == run.sh ]]; then
         command=(python3 "$scratch/terminal.py" "${command[@]}")
     fi
+    if [[ -n "${LAUNCH_TIMEOUT:-}" ]]; then
+        command=(timeout "$LAUNCH_TIMEOUT" "${command[@]}")
+    fi
+    local state_home="${LAUNCH_STATE_HOME:-$case_dir/xdg}"
     env \
         HOME="$fake_home" \
         TMPDIR="$temp_root" \
+        XDG_STATE_HOME="$state_home" \
         PATH="$mock_bin:$PATH" \
         CLAUDE_CODE_OAUTH_TOKEN=dummyoauth \
         DOCKER_MOCK_LOG="$log" \
@@ -291,10 +368,20 @@ for launcher in run.sh run_command.sh run_sequence_prompts.sh; do
     grep -Fx "exec $container_id" "$scratch/case-success-$launcher/docker.log" >/dev/null || fail "exec was not called"
 done
 
-[[ "$(cat "$project/plan/handoffs/.gitignore")" == '*' ]] || fail "handoffs are not ignored"
+[[ ! -e "$project/plan" ]] || fail "sequence wrote into the project"
+set_run_dir "$scratch/case-success-run_sequence_prompts.sh"
+assert_private_handoffs "$run_dir"
+grep -F "Handoffs: $run_dir/handoffs" \
+    "$scratch/case-success-run_sequence_prompts.sh/stdout" >/dev/null ||
+    fail "handoff path was not printed"
+for plain_launcher in run.sh run_command.sh; do
+    if [[ -n "$(find "$scratch/case-success-$plain_launcher/xdg" -type d -name 'run.*' -print -quit)" ]]; then
+        fail "$plain_launcher kept an empty run directory"
+    fi
+done
 
-# The host must not follow links that the container plants in plan/handoffs,
-# before the run or while it runs.
+# The host must not follow links or directories the container plants in the
+# project. Handoffs stay in the private directory.
 plant_project="$scratch/plant-project"
 plant_handoffs="$plant_project/plan/handoffs"
 mkdir -p "$plant_handoffs"
@@ -312,21 +399,128 @@ plant_status="$(
 for host_file in transcript log secret; do
     [[ "$(cat "$scratch/host-$host_file")" == keep ]] || fail "host followed a planted link to host-$host_file"
 done
-for handoff_file in conversation_1.txt conversation_1_handoff.txt workflow_log.txt workflow_status.txt; do
-    [[ -f "$plant_handoffs/$handoff_file" && ! -L "$plant_handoffs/$handoff_file" ]] ||
-        fail "$handoff_file was not saved as a regular file"
-done
-grep -F 'done' "$plant_handoffs/conversation_1.txt" >/dev/null || fail "transcript was not saved"
-grep -F 'COMPLETED' "$plant_handoffs/workflow_status.txt" >/dev/null || fail "status was not saved"
+[[ -L "$plant_handoffs/conversation_1.txt" && -L "$plant_handoffs/workflow_log.txt" ]] ||
+    fail "planted links were replaced in the project"
+[[ -p "$plant_handoffs/workflow_status.txt" ]] || fail "planted fifo was replaced in the project"
+set_run_dir "$scratch/case-plant-run_sequence_prompts.sh"
+assert_private_handoffs "$run_dir"
+
+directory_project="$scratch/directory-project"
+mkdir -p "$directory_project/plan/handoffs/conversation_1.txt"
+printf 'keep\n' > "$scratch/directory-sentinel"
+ln -s "$scratch/directory-sentinel" \
+    "$directory_project/plan/handoffs/conversation_1.txt/conversation_1.txt"
+directory_status="$(run_launcher directory run_sequence_prompts.sh "$directory_project" "$scratch/prompts.txt")"
+[[ "$directory_status" -eq 0 ]] || fail "directory plant exited $directory_status"
+[[ "$(cat "$scratch/directory-sentinel")" == keep ]] || fail "host followed a planted directory"
+[[ -d "$directory_project/plan/handoffs/conversation_1.txt" ]] || fail "planted directory was removed"
+[[ -L "$directory_project/plan/handoffs/conversation_1.txt/conversation_1.txt" ]] ||
+    fail "planted child link was replaced"
+set_run_dir "$scratch/case-directory-run_sequence_prompts.sh"
+assert_private_handoffs "$run_dir"
+
+fifo_project="$scratch/fifo-project"
+mkdir -p "$fifo_project/plan/handoffs/workflow_log.txt"
+mkfifo "$fifo_project/plan/handoffs/workflow_log.txt/workflow_log.txt"
+fifo_status="$(
+    LAUNCH_TIMEOUT=15 run_launcher fifo run_sequence_prompts.sh "$fifo_project" "$scratch/prompts.txt"
+)"
+[[ "$fifo_status" -eq 0 ]] || fail "directory fifo exited $fifo_status"
+[[ -p "$fifo_project/plan/handoffs/workflow_log.txt/workflow_log.txt" ]] ||
+    fail "planted child fifo was replaced"
+set_run_dir "$scratch/case-fifo-run_sequence_prompts.sh"
+assert_private_handoffs "$run_dir"
 
 linked_project="$scratch/linked-project"
 mkdir -p "$linked_project" "$scratch/outside-plan"
 ln -s "$scratch/outside-plan" "$linked_project/plan"
-linked_status="$(run_launcher success run_sequence_prompts.sh "$linked_project" "$scratch/prompts.txt")"
-[[ "$linked_status" -ne 0 ]] || fail "linked plan directory was accepted"
-grep -F 'is a link; handoffs were not saved.' "$scratch/case-success-run_sequence_prompts.sh/stderr" >/dev/null ||
-    fail "linked plan directory was not reported"
+linked_status="$(run_launcher linked run_sequence_prompts.sh "$linked_project" "$scratch/prompts.txt")"
+[[ "$linked_status" -eq 0 ]] || fail "linked plan directory exited $linked_status"
 [[ -z "$(find "$scratch/outside-plan" -mindepth 1 -print -quit)" ]] || fail "handoffs followed a linked plan directory"
+[[ -L "$linked_project/plan" ]] || fail "linked plan directory was replaced"
+set_run_dir "$scratch/case-linked-run_sequence_prompts.sh"
+assert_private_handoffs "$run_dir"
+
+inside_project="$scratch/inside-project"
+mkdir -p "$inside_project"
+inside_status="$(
+    LAUNCH_STATE_HOME="$inside_project/state" \
+        run_launcher inside run_sequence_prompts.sh "$inside_project" "$scratch/prompts.txt"
+)"
+[[ "$inside_status" -ne 0 ]] || fail "state inside the project was accepted"
+grep -F 'inside the project' \
+    "$scratch/case-inside-run_sequence_prompts.sh/stderr" >/dev/null ||
+    fail "state inside the project was not reported"
+if [[ -f "$scratch/case-inside-run_sequence_prompts.sh/docker.log" ]] &&
+    grep -Fx 'run' "$scratch/case-inside-run_sequence_prompts.sh/docker.log" >/dev/null; then
+    fail "state inside the project still started a container"
+fi
+[[ ! -e "$inside_project/plan" && ! -d "$inside_project/state" ]] ||
+    fail "state inside the project wrote project files"
+
+sym_project="$scratch/sym-project"
+mkdir -p "$sym_project"
+ln -s "$sym_project" "$scratch/link-state"
+sym_status="$(
+    LAUNCH_STATE_HOME="$scratch/link-state" \
+        run_launcher symlink run_sequence_prompts.sh "$sym_project" "$scratch/prompts.txt"
+)"
+[[ "$sym_status" -ne 0 ]] || fail "state link into the project was accepted"
+if [[ -f "$scratch/case-symlink-run_sequence_prompts.sh/docker.log" ]] &&
+    grep -Fx 'run' "$scratch/case-symlink-run_sequence_prompts.sh/docker.log" >/dev/null; then
+    fail "state link into the project still started a container"
+fi
+
+expect_removal_kept() {
+    local script_name="$1"
+    local mode="$2"
+    shift 2
+    local status
+    status="$(run_launcher "$mode" "$script_name" "$@")"
+    [[ "$status" -ne 0 ]] || fail "${script_name} ${mode} exited 0"
+    local case_dir="$scratch/case-${mode}-${script_name}"
+    grep -F 'may still be running' "$case_dir/stdout" "$case_dir/stderr" >/dev/null ||
+        fail "${script_name} ${mode} did not report a live container"
+    grep -F 'removal was not confirmed' "$case_dir/stdout" "$case_dir/stderr" >/dev/null ||
+        fail "${script_name} ${mode} did not keep the run directory"
+    set_run_dir "$case_dir"
+    [[ -d "$run_dir/home" ]] || fail "${script_name} ${mode} deleted the home"
+    [[ -s "$run_dir/container.id" ]] || fail "${script_name} ${mode} deleted the container id"
+    if [[ "$script_name" == run_sequence_prompts.sh ]]; then
+        [[ -d "$run_dir/handoffs" ]] || fail "${script_name} ${mode} deleted handoffs"
+        [[ ! -e "$project/plan" ]] || fail "${script_name} ${mode} wrote into the project"
+    fi
+}
+
+expect_removal_kept run_sequence_prompts.sh rm-fail "$project" "$scratch/prompts.txt"
+expect_removal_kept run_command.sh rm-fail "$project" "hello"
+expect_removal_kept run.sh rm-fail "$project"
+expect_removal_kept run_sequence_prompts.sh daemon-down "$project" "$scratch/prompts.txt"
+expect_removal_kept run_command.sh daemon-down "$project" "hello"
+expect_removal_kept run_sequence_prompts.sh inspect-fail "$project" "$scratch/prompts.txt"
+
+absent_status="$(run_launcher absent run_sequence_prompts.sh "$project" "$scratch/prompts.txt")"
+[[ "$absent_status" -eq 0 ]] || fail "already-absent container exited $absent_status"
+grep -Fx "inspect ${container_id}" \
+    "$scratch/case-absent-run_sequence_prompts.sh/docker.log" >/dev/null ||
+    fail "already-absent container was not checked with the daemon"
+set_run_dir "$scratch/case-absent-run_sequence_prompts.sh"
+assert_private_handoffs "$run_dir"
+absent_command="$(run_launcher absent run.sh "$project")"
+[[ "$absent_command" -eq 0 ]] || fail "already-absent run.sh exited $absent_command"
+if [[ -n "$(find "$scratch/case-absent-run.sh/xdg" -type d -name 'run.*' -print -quit)" ]]; then
+    fail "already-absent run.sh kept an empty run directory"
+fi
+
+bad_status="$(run_launcher bad-id run_sequence_prompts.sh "$project" "$scratch/prompts.txt")"
+[[ "$bad_status" -ne 0 ]] || fail "invalid container id exited 0"
+if grep -E '^(removed|rm-failed|removed-by-name) ' \
+    "$scratch/case-bad-id-run_sequence_prompts.sh/docker.log" >/dev/null; then
+    fail "invalid container id was removed"
+fi
+set_run_dir "$scratch/case-bad-id-run_sequence_prompts.sh"
+[[ -d "$run_dir/home" && -d "$run_dir/handoffs" ]] || fail "invalid container id deleted the run"
+[[ "$(cat "$run_dir/container.id")" == not-an-id ]] || fail "invalid container id file was not kept"
 
 grep -Fx 'COPY --chmod=0644 managed-settings.json /etc/claude-code/managed-settings.json' \
     "$repository_root/container/Dockerfile" >/dev/null || fail "managed settings mode is not fixed"

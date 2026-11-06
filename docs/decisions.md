@@ -14,7 +14,7 @@ Claude needs network access, project write access, and authentication for the wo
 
 The host `~/.claude` is not mounted by default. It holds credentials, every session transcript, history, MCP tokens, and settings, and a bypassed session with network access could read or change all of it. Each run gets a new temporary home with only the credentials it needs. Mounting the host config is an explicit opt-in (`CLAUDE_CONTAINER_MOUNT_HOST_CONFIG=1`).
 
-When both `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` are set, the launcher forwards only the OAuth token. The API key stays on the host. Cleanup removes the container id this run created, including when startup fails, and then deletes the temporary home.
+When both `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` are set, the launcher forwards only the OAuth token. The API key stays on the host. Cleanup removes the container id this run created, including when startup fails, only after `docker rm` succeeds or the daemon shows that exact id is gone. It then deletes the temporary home. If removal is not confirmed, the script exits non-zero and keeps the private run directory. Sequence handoffs are written only in that directory (`${XDG_STATE_HOME:-$HOME/.local/state}/claude_code/runs/`), never into the project, and they are kept after the run.
 
 The container runs as the host uid so project files keep their owner and a mode-600 credentials file stays readable. It drops all Linux capabilities and sets `no-new-privileges`. Claude Code refuses bypass mode as root, so the scripts do not fall back to root. Settings that must hold in every container session live in the image at `/etc/claude-code/managed-settings.json`.
 
