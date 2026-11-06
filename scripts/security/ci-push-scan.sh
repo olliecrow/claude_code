@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Scan the CI revision range: commit messages and added lines, then gitleaks.
-# An empty base scans every commit reachable from the target.
+# ci-range.sh chooses the range. An empty, zero, or unknown base uses the
+# reviewed baseline when that commit is an ancestor, and all history otherwise.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

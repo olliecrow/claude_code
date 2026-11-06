@@ -9,11 +9,13 @@ usage: check-push-range.sh [--from <sha>] --to <sha>
        check-push-range.sh --only --to <sha>
        check-push-range.sh --all --to <sha>
 
-Scans every commit in <from>..<to>. Without --from, or with an all-zero
---from, scans every commit reachable from <to>. --only scans <to> and not its parents. --all
-scans every commit reachable from <to>. Merge commits are scanned against
-their first parent. With no flags, reads the range that pre-commit sets
-for pre-push hooks.
+Scans every commit in <from>..<to>. Without --from, or with an all-zero or
+unknown --from, scans commits after the reviewed baseline when that commit
+is an ancestor of <to>. Otherwise it scans every commit reachable from <to>.
+--only scans <to> and not its parents. --all scans every commit reachable
+from <to>, including history below the baseline. Merge commits are scanned
+against their first parent. With no flags, reads the range that pre-commit
+sets for pre-push hooks.
 EOF
 }
 
@@ -21,6 +23,9 @@ zero_ref="0000000000000000000000000000000000000000"
 object_id_regex='^([0-9a-f]{40}|[0-9a-f]{64})$'
 local_ref_regex='^(HEAD|refs/[A-Za-z0-9._/+-]+)$'
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export SECURITY_SCRIPT_DIR="$script_dir"
+# shellcheck source=scripts/security/reviewed-range.sh
+source "$script_dir/reviewed-range.sh"
 scan_all=0
 scan_only=0
 
@@ -93,8 +98,9 @@ if [[ "$scan_only" -eq 1 ]]; then
 elif [[ "$scan_all" -eq 1 ]]; then
   commit_list="$(git rev-list "$to_ref")" ||
     die "unable to list commits for the push range"
-elif [[ -z "$from_ref" || "$from_ref" == "$zero_ref" ]]; then
-  commit_list="$(git rev-list "$to_ref")" ||
+elif [[ -z "$from_ref" || "$from_ref" =~ ^0+$ ]] || ! git cat-file -e "${from_ref}^{commit}" 2>/dev/null; then
+  range="$(reviewed_fallback_range "$to_ref")"
+  commit_list="$(git rev-list "$range")" ||
     die "unable to list commits for the push range"
 else
   commit_list="$(git rev-list "${from_ref}..${to_ref}")" ||

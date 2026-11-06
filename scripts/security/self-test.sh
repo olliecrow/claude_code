@@ -353,4 +353,93 @@ if command -v gitleaks >/dev/null 2>&1; then
     expect_wrapper 0 "delete-only range" bash "$gitleaks_wrapper" --from "$clean_sha" --to "$delete_sha"
 fi
 
+# Missing push bases scan after the reviewed baseline, not all history.
+# A baseline that is missing or not an ancestor still scans all history.
+recorded_base="$(tr -d '[:space:]' < "$script_dir/reviewed-base")"
+[[ "$recorded_base" =~ ^[0-9a-f]{40}$ ]] || fail "reviewed baseline is not a commit id"
+git -C "$script_dir/../.." merge-base --is-ancestor "$recorded_base" HEAD ||
+    fail "reviewed baseline is not an ancestor of HEAD"
+
+baseline_repo="$scratch/baseline-repo"
+git init -q -b main "$baseline_repo"
+git -C "$baseline_repo" config user.name 'Policy Test'
+git -C "$baseline_repo" config user.email 'policy-test@example.com'
+git -C "$baseline_repo" config commit.gpgsign false
+baseline_commit() {
+    local name="$1"
+    local content="$2"
+    local message="$3"
+    printf '%s\n' "$content" > "$baseline_repo/$name"
+    git -C "$baseline_repo" add -- "$name"
+    git -C "$baseline_repo" \
+        -c user.name='Policy Test' \
+        -c user.email='policy-test@example.com' \
+        -c commit.gpgsign=false \
+        commit -q -m "$message"
+}
+baseline_status() {
+    local expected="$1"
+    local label="$2"
+    shift 2
+    local status=0
+    (cd "$baseline_repo" && "$@") >/dev/null 2>&1 || status=$?
+    [[ "$status" -eq "$expected" ]] || fail "$label exited $status, expected $expected"
+}
+baseline_commit old.txt "$bad_home" 'old fixture'
+baseline_commit reviewed.txt 'reviewed clean' 'reviewed'
+reviewed_sha="$(git -C "$baseline_repo" rev-parse HEAD)"
+baseline_commit after.txt 'after review' 'after review'
+clean_tip="$(git -C "$baseline_repo" rev-parse HEAD)"
+mkdir -p "$baseline_repo/scripts/security"
+for security_name in ci-range.sh check-push-range.sh check-sensitive-text.sh reviewed-range.sh ci-push-scan.sh gitleaks-range.sh; do
+    cp "$script_dir/$security_name" "$baseline_repo/scripts/security/$security_name"
+done
+cp "$script_dir/../../.gitleaks.toml" "$baseline_repo/.gitleaks.toml"
+printf '%s\n' "$reviewed_sha" > "$baseline_repo/scripts/security/reviewed-base"
+for missing_base in '' "$zero_ref" "$fake_from"; do
+    baseline_status 0 "baseline fallback $missing_base" \
+        bash scripts/security/check-push-range.sh --from "$missing_base" --to "$clean_tip"
+    fallback_range="$(
+        cd "$baseline_repo"
+        GITHUB_EVENT_NAME=push PUSH_BEFORE_SHA="$missing_base" GITHUB_SHA="$clean_tip" \
+            bash scripts/security/ci-range.sh
+    )"
+    [[ "$fallback_range" == "$reviewed_sha..$clean_tip" ]] ||
+        fail "baseline fallback range was $fallback_range"
+    [[ "$(git -C "$baseline_repo" rev-list --count "$fallback_range")" == 1 ]] ||
+        fail "baseline fallback included history"
+done
+baseline_status 0 "pre-push fallback" \
+    env -u PRE_COMMIT_FROM_REF -u PRE_COMMIT_LOCAL_BRANCH \
+        PRE_COMMIT_TO_REF="$clean_tip" bash scripts/security/check-push-range.sh
+baseline_status 1 "full history still scans the old fixture" \
+    bash scripts/security/check-push-range.sh --all --to "$clean_tip"
+rm "$baseline_repo/scripts/security/reviewed-base"
+baseline_status 1 "missing baseline file scans all history" \
+    bash scripts/security/check-push-range.sh --from "" --to "$clean_tip"
+printf '%s\n' "$fake_from" > "$baseline_repo/scripts/security/reviewed-base"
+baseline_status 1 "non-ancestor baseline scans all history" \
+    bash scripts/security/check-push-range.sh --from "" --to "$clean_tip"
+printf '%s\n' "$reviewed_sha" > "$baseline_repo/scripts/security/reviewed-base"
+baseline_commit later.txt "$bad_home" 'later fixture'
+later_sha="$(git -C "$baseline_repo" rev-parse HEAD)"
+for missing_base in '' "$zero_ref" "$fake_from"; do
+    baseline_status 1 "new violation after baseline $missing_base" \
+        bash scripts/security/check-push-range.sh --from "$missing_base" --to "$later_sha"
+done
+baseline_status 1 "known base scans a new violation" \
+    bash scripts/security/check-push-range.sh --from "$clean_tip" --to "$later_sha"
+if command -v gitleaks >/dev/null 2>&1; then
+    baseline_status 0 "gitleaks baseline range" \
+        bash scripts/security/gitleaks-range.sh --from "$reviewed_sha" --to "$clean_tip"
+    baseline_status 1 "gitleaks new violation" \
+        bash scripts/security/gitleaks-range.sh --from "$reviewed_sha" --to "$later_sha"
+    baseline_status 0 "CI scan uses the baseline" \
+        env GITHUB_EVENT_NAME=push GITHUB_SHA="$clean_tip" PUSH_BEFORE_SHA="" \
+            bash scripts/security/ci-push-scan.sh
+    baseline_status 1 "CI scan rejects a new violation" \
+        env GITHUB_EVENT_NAME=push GITHUB_SHA="$later_sha" PUSH_BEFORE_SHA="" \
+            bash scripts/security/ci-push-scan.sh
+fi
+
 echo "Security self-test passed."

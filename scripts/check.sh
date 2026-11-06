@@ -26,6 +26,7 @@ shell_scripts=(
     scripts/security/ci-push-scan.sh
     scripts/security/ci-range.sh
     scripts/security/gitleaks-range.sh
+    scripts/security/reviewed-range.sh
     scripts/security/self-test.sh
 )
 
