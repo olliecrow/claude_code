@@ -56,10 +56,11 @@ host_timezone="$(detect_host_timezone)"
 project_name="$(safe_container_component "$(basename "$project_directory")")"
 container_name="claude_sequence_${project_name}_$(date +%s)_$$"
 handoff_directory="$project_directory/plan/handoffs"
-workflow_log="$handoff_directory/workflow_log.txt"
-workflow_status="$handoff_directory/workflow_status.txt"
 
 temporary_directory=""
+private_handoff_directory=""
+workflow_log=""
+workflow_status=""
 container_id_file=""
 workflow_complete=0
 handoff_initialized=0
@@ -78,19 +79,59 @@ write_status() {
     printf '%s %s\n' "$status" "$(timestamp)" > "$workflow_status"
 }
 
+# Copies this run's handoff files into the project. Call it only after the
+# container is removed, so it cannot swap files during the copy. The container
+# could have planted links in plan/handoffs: a linked directory is refused,
+# and a link or file in the way is replaced, never followed.
+publish_handoffs() {
+    local directory_path=""
+    local source_file=""
+    local destination_file=""
+
+    for directory_path in "$project_directory/plan" "$handoff_directory"; do
+        if [[ -L "$directory_path" ]]; then
+            echo "Error: $directory_path is a link; handoffs were not saved." >&2
+            return 1
+        fi
+        if [[ ! -d "$directory_path" ]]; then
+            mkdir -- "$directory_path" || return 1
+        fi
+    done
+    # Keep transcripts out of commits without running host Git.
+    if [[ ! -e "$handoff_directory/.gitignore" && ! -L "$handoff_directory/.gitignore" ]]; then
+        printf '*\n' > "$handoff_directory/.gitignore"
+    fi
+    for source_file in "$private_handoff_directory"/*; do
+        [[ -f "$source_file" ]] || continue
+        destination_file="$handoff_directory/${source_file##*/}"
+        # Replace any link, file, or FIFO so cp neither follows nor blocks on it.
+        if [[ -L "$destination_file" ]] || [[ -e "$destination_file" && ! -d "$destination_file" ]]; then
+            rm -f -- "$destination_file"
+        fi
+        cp -- "$source_file" "$destination_file" || return 1
+    done
+}
+
 cleanup() {
     local exit_code=$?
 
     if [[ -n "$container_id_file" ]]; then
         remove_recorded_container "$container_id_file"
     fi
-    if [[ -n "$temporary_directory" ]]; then
-        rm -rf -- "$temporary_directory"
+
+    if [[ "$handoff_initialized" -eq 1 ]]; then
+        if [[ "$workflow_complete" -eq 0 ]]; then
+            write_status "FAILED" || true
+            log "Workflow failed with status $exit_code." || true
+        fi
+        if ! publish_handoffs; then
+            echo "Error: could not save handoffs to $handoff_directory." >&2
+            [[ "$exit_code" -ne 0 ]] || exit_code=1
+        fi
     fi
 
-    if [[ "$workflow_complete" -eq 0 && "$handoff_initialized" -eq 1 ]]; then
-        write_status "FAILED" || true
-        log "Workflow failed with status $exit_code." || true
+    if [[ -n "$temporary_directory" ]]; then
+        rm -rf -- "$temporary_directory"
     fi
 
     exit "$exit_code"
@@ -134,12 +175,12 @@ require_docker
 temporary_directory="$(mktemp -d)"
 container_id_file="$temporary_directory/container.id"
 trap cleanup EXIT
-mkdir -p "$handoff_directory"
-# Keep transcripts out of commits. The runner never runs host Git, because the
-# container can write Git metadata in the project.
-if [[ ! -e "$handoff_directory/.gitignore" ]]; then
-    printf '*\n' > "$handoff_directory/.gitignore"
-fi
+# The container can write the project, so handoffs stay in this private
+# directory during the run and are copied to the project at the end.
+private_handoff_directory="$temporary_directory/handoffs"
+workflow_log="$private_handoff_directory/workflow_log.txt"
+workflow_status="$private_handoff_directory/workflow_status.txt"
+mkdir "$private_handoff_directory"
 : > "$workflow_log"
 handoff_initialized=1
 
@@ -231,8 +272,8 @@ run_conversation() {
     local conversation_number="$1"
     shift
     local conversation_prompts=("$@")
-    local transcript_file="$handoff_directory/conversation_${conversation_number}.txt"
-    local handoff_file="$handoff_directory/conversation_${conversation_number}_handoff.txt"
+    local transcript_file="$private_handoff_directory/conversation_${conversation_number}.txt"
+    local handoff_file="$private_handoff_directory/conversation_${conversation_number}_handoff.txt"
     local session_file="$temporary_directory/session_${conversation_number}.txt"
     local json_file=""
     local result_file=""
@@ -244,7 +285,7 @@ run_conversation() {
     : > "$transcript_file"
 
     if [[ "$initial_task_written" -eq 0 ]]; then
-        printf '%s\n' "${conversation_prompts[0]}" > "$handoff_directory/initial_task.txt"
+        printf '%s\n' "${conversation_prompts[0]}" > "$private_handoff_directory/initial_task.txt"
         initial_task_written=1
     fi
 
@@ -283,7 +324,7 @@ $prompt_text"
 print_trust_warning
 echo "Project: $project_directory"
 echo "Prompts: $prompts_file"
-echo "Handoffs: $handoff_directory"
+echo "Handoffs: $handoff_directory (saved when the run ends)"
 write_status "STARTED"
 
 mkdir "$temporary_directory/home"

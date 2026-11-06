@@ -53,12 +53,12 @@ case "$1" in
             fi
             previous="$argument"
         done
-        if [[ "$mode" == "start-fail" || "$mode" == success ]]; then
+        if [[ "$mode" == "start-fail" || "$mode" == success || "$mode" == plant ]]; then
             [[ -n "$cidfile" ]] || exit 2
             printf '%s\n' "${DOCKER_MOCK_ID:?}" > "$cidfile"
             printf '%s\n' "$cidfile" > "$state/cidfile-path"
             printf 'created\n' >> "$log"
-            [[ "$mode" != success ]] || exit 0
+            [[ "$mode" == "start-fail" ]] || exit 0
             exit 125
         fi
         if [[ "$mode" == "create-fail" ]]; then
@@ -70,6 +70,11 @@ case "$1" in
     exec)
         [[ "${5:-}" == "${DOCKER_MOCK_ID:?}" ]] || exit 3
         printf 'exec %s\n' "$5" >> "$log"
+        if [[ "$mode" == plant ]]; then
+            # Act like a container that points a handoff file at a host file.
+            mkdir -p "${DOCKER_MOCK_PLANT_DIR:?}"
+            ln -sfn "${DOCKER_MOCK_PLANT_TARGET:?}" "$DOCKER_MOCK_PLANT_DIR/conversation_1_handoff.txt"
+        fi
         [[ "$2" != -i ]] || cat >/dev/null
         printf '{"result":"done","session_id":"test-session"}\n'
         exit 0
@@ -287,6 +292,41 @@ for launcher in run.sh run_command.sh run_sequence_prompts.sh; do
 done
 
 [[ "$(cat "$project/plan/handoffs/.gitignore")" == '*' ]] || fail "handoffs are not ignored"
+
+# The host must not follow links that the container plants in plan/handoffs,
+# before the run or while it runs.
+plant_project="$scratch/plant-project"
+plant_handoffs="$plant_project/plan/handoffs"
+mkdir -p "$plant_handoffs"
+for host_file in transcript log secret; do
+    printf 'keep\n' > "$scratch/host-$host_file"
+done
+ln -s "$scratch/host-transcript" "$plant_handoffs/conversation_1.txt"
+ln -s "$scratch/host-log" "$plant_handoffs/workflow_log.txt"
+mkfifo "$plant_handoffs/workflow_status.txt"
+plant_status="$(
+    export DOCKER_MOCK_PLANT_DIR="$plant_handoffs" DOCKER_MOCK_PLANT_TARGET="$scratch/host-secret"
+    run_launcher plant run_sequence_prompts.sh "$plant_project" "$scratch/prompts.txt"
+)"
+[[ "$plant_status" -eq 0 ]] || fail "planted links run exited $plant_status"
+for host_file in transcript log secret; do
+    [[ "$(cat "$scratch/host-$host_file")" == keep ]] || fail "host followed a planted link to host-$host_file"
+done
+for handoff_file in conversation_1.txt conversation_1_handoff.txt workflow_log.txt workflow_status.txt; do
+    [[ -f "$plant_handoffs/$handoff_file" && ! -L "$plant_handoffs/$handoff_file" ]] ||
+        fail "$handoff_file was not saved as a regular file"
+done
+grep -F 'done' "$plant_handoffs/conversation_1.txt" >/dev/null || fail "transcript was not saved"
+grep -F 'COMPLETED' "$plant_handoffs/workflow_status.txt" >/dev/null || fail "status was not saved"
+
+linked_project="$scratch/linked-project"
+mkdir -p "$linked_project" "$scratch/outside-plan"
+ln -s "$scratch/outside-plan" "$linked_project/plan"
+linked_status="$(run_launcher success run_sequence_prompts.sh "$linked_project" "$scratch/prompts.txt")"
+[[ "$linked_status" -ne 0 ]] || fail "linked plan directory was accepted"
+grep -F 'is a link; handoffs were not saved.' "$scratch/case-success-run_sequence_prompts.sh/stderr" >/dev/null ||
+    fail "linked plan directory was not reported"
+[[ -z "$(find "$scratch/outside-plan" -mindepth 1 -print -quit)" ]] || fail "handoffs followed a linked plan directory"
 
 grep -Fx 'COPY --chmod=0644 managed-settings.json /etc/claude-code/managed-settings.json' \
     "$repository_root/container/Dockerfile" >/dev/null || fail "managed settings mode is not fixed"

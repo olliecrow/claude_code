@@ -46,7 +46,7 @@ The prompt file format is:
 - a prompt beginning with `/compact` ends the current conversation;
 - text after `/compact` becomes the first prompt in the new conversation.
 
-Handoffs and logs are written to the target project’s `plan/handoffs/` directory. The runner adds a `.gitignore` there (unless one exists), so Git ignores them.
+Handoffs and logs are copied to the target project’s `plan/handoffs/` directory when the run ends; during the run they stay in a private host directory, so the container cannot redirect host writes with links. The runner adds a `.gitignore` there (unless one exists), so Git ignores them.
 
 Each run uses a new temporary home at `/home/dev` and deletes it afterwards, so sessions do not carry over between runs. To use your host skills, agents, commands, settings, and plugins, set `CLAUDE_CONTAINER_MOUNT_HOST_CONFIG=1`. That mounts `~/.claude` read-write. User MCP servers in `~/.claude.json` and host session resume do not carry over. Container sessions use the `/workspace` path for every project.
 

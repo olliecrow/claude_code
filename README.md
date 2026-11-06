@@ -81,7 +81,7 @@ See [agents/README.md](agents/README.md) and [commands/README.md](commands/READM
 - `docs/`: durable project decisions
 - `scripts/`: repository checks and public-safety checks
 
-Generated handoffs and transcripts go to `plan/handoffs/` in the target project. The sequence runner adds a `.gitignore` there, so Git ignores them.
+Generated handoffs and transcripts go to `plan/handoffs/` in the target project when the run ends. The sequence runner adds a `.gitignore` there, so Git ignores them.
 
 ## Development
 
