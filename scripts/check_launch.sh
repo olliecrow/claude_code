@@ -551,6 +551,18 @@ if [[ -f "$scratch/case-symlink-run_sequence_prompts.sh/docker.log" ]] &&
     fail "state link into the project still started a container"
 fi
 
+# Name the resolved destination and the setting users must change.
+for state_case in inside symlink; do
+    state_error="$scratch/case-$state_case-run_sequence_prompts.sh/stderr"
+    if [[ "$state_case" == inside ]]; then
+        resolved_state="$inside_project/state/claude_code/runs"
+    else
+        resolved_state="$sym_project/claude_code/runs"
+    fi
+    grep -F "$resolved_state" "$state_error" >/dev/null || fail "state error omitted the resolved path"
+    grep -F 'XDG_STATE_HOME' "$state_error" >/dev/null || fail "state error omitted XDG_STATE_HOME"
+done
+
 expect_removal_kept() {
     local script_name="$1"
     local mode="$2"

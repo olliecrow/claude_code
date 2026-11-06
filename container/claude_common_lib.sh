@@ -274,7 +274,7 @@ private_run_directory() {
     intended="${resolved}${state_root#"${existing}"}"
     case "$intended/" in
         "$project_directory/"*)
-            echo "Error: the private run directory would be inside the project." >&2
+            echo "Error: the private run directory $intended would be inside the project. Set XDG_STATE_HOME to a directory outside the project." >&2
             return 1
             ;;
     esac
