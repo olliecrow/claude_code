@@ -42,7 +42,7 @@ cleanup() {
 
     if [[ -n "$run_directory" ]]; then
         if ! release_recorded_container "$run_directory"; then
-            echo "Error: container removal was not confirmed. Kept $run_directory" >&2
+            echo "Error: run directory cleanup failed. Kept $run_directory" >&2
             if [[ "$exit_code" -eq 0 ]]; then
                 exit_code=1
             fi

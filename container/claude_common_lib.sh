@@ -339,7 +339,10 @@ release_recorded_container() {
         return 1
     fi
     if [[ -e "$run_directory/container.id" || -L "$run_directory/container.id" ]]; then
-        remove_recorded_container "$run_directory/container.id" || return 1
+        if ! remove_recorded_container "$run_directory/container.id"; then
+            echo "Error: container removal was not confirmed. Kept $run_directory" >&2
+            return 1
+        fi
     fi
     for child in home work; do
         if [[ -L "$run_directory/$child" ]]; then
@@ -347,7 +350,11 @@ release_recorded_container() {
             return 1
         fi
         if [[ -d "$run_directory/$child" ]]; then
-            rm -r -- "${run_directory:?}/${child:?}" || return 1
+            if ! chmod -R u+rwX -- "$run_directory/$child" ||
+                ! rm -rf -- "${run_directory:?}/${child:?}"; then
+                echo "Error: could not delete $run_directory/$child" >&2
+                return 1
+            fi
         fi
     done
     if [[ -L "$run_directory/container.id" ]]; then

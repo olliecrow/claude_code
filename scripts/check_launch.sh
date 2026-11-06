@@ -9,6 +9,7 @@ unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY CLAUDE_CONTAINER_MOUNT_HOST_CONF
 
 scratch="$(mktemp -d)"
 cleanup() {
+    chmod -R u+rwX -- "$scratch"
     rm -rf -- "$scratch"
 }
 trap cleanup EXIT
@@ -100,7 +101,7 @@ case "$1" in
             printf 'created\n' >> "$log"
             exit 0
         fi
-        if [[ "$mode" == "start-fail" || "$mode" == success || "$mode" == plant || "$mode" == directory || "$mode" == fifo || "$mode" == linked || "$mode" == rm-fail || "$mode" == daemon-down || "$mode" == absent || "$mode" == inspect-fail ]]; then
+        if [[ "$mode" == "start-fail" || "$mode" == readonly || "$mode" == delete-fail || "$mode" == success || "$mode" == plant || "$mode" == directory || "$mode" == fifo || "$mode" == linked || "$mode" == rm-fail || "$mode" == daemon-down || "$mode" == absent || "$mode" == inspect-fail ]]; then
             [[ -n "$cidfile" ]] || exit 2
             printf '%s\n' "${DOCKER_MOCK_ID:?}" > "$cidfile"
             printf '%s\n' "$cidfile" > "$state/cidfile-path"
@@ -142,6 +143,14 @@ case "$1" in
             printf 'rm-failed %s\n' "$id" >> "$log"
             exit 1
         fi
+        if [[ "$mode" == readonly ]]; then
+            run_home="$(dirname "$cidfile")/home"
+            mkdir -p "$run_home/sub/nested"
+            printf 'cache\n' > "$run_home/sub/nested/cache"
+            chmod 444 "$run_home/sub/nested/cache"
+            chmod 555 "$run_home/sub/nested" "$run_home/sub"
+            ln -s "${DOCKER_MOCK_SENTINEL:?}" "$run_home/outside"
+        fi
         printf 'removed %s\n' "$id" >> "$log"
         exit 0
         ;;
@@ -176,6 +185,21 @@ printf 'host-git %s\n' "$*" >> "${DOCKER_MOCK_LOG:?}"
 exit 1
 EOF
 chmod 755 "$mock_bin/git"
+
+# Fail only the verified run-home deletion; allow test teardown to use real rm.
+real_rm="$(command -v rm)"
+cat > "$mock_bin/rm" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${DOCKER_MOCK_MODE:-}" == delete-fail ]]; then
+    cidfile="$(cat "${DOCKER_MOCK_STATE:?}/cidfile-path")"
+    if [[ "${!#}" == "$(dirname "$cidfile")/home" ]]; then
+        exit 1
+    fi
+fi
+exec "${DOCKER_MOCK_REAL_RM:?}" "$@"
+EOF
+chmod 755 "$mock_bin/rm"
+export DOCKER_MOCK_REAL_RM="$real_rm"
 
 assert_args_have() {
     local args_file="$1"
@@ -443,6 +467,37 @@ linked_status="$(run_launcher linked run_sequence_prompts.sh "$linked_project" "
 [[ -L "$linked_project/plan" ]] || fail "linked plan directory was replaced"
 set_run_dir "$scratch/case-linked-run_sequence_prompts.sh"
 assert_private_handoffs "$run_dir"
+
+# Cleanup must handle read-only cache trees and report deletion failures precisely.
+printf 'keep\n' > "$scratch/cleanup-sentinel"
+chmod 400 "$scratch/cleanup-sentinel"
+export DOCKER_MOCK_SENTINEL="$scratch/cleanup-sentinel"
+for cleanup_launcher in run_sequence_prompts.sh run_command.sh run.sh; do
+    cleanup_arguments=("$project" hello)
+    [[ "$cleanup_launcher" != run.sh ]] || cleanup_arguments=("$project")
+    [[ "$cleanup_launcher" != run_sequence_prompts.sh ]] || cleanup_arguments=("$project" "$scratch/prompts.txt")
+    readonly_status="$(LAUNCH_TIMEOUT=15 run_launcher readonly "$cleanup_launcher" "${cleanup_arguments[@]}")"
+    [[ "$readonly_status" -eq 0 ]] || fail "$cleanup_launcher could not delete a read-only home"
+    [[ "$(mode_of "$scratch/cleanup-sentinel")" == 400 ]] || fail "cleanup changed a linked file's permissions"
+    [[ "$(cat "$scratch/cleanup-sentinel")" == keep ]] || fail "cleanup changed a linked file"
+    if [[ "$cleanup_launcher" == run_sequence_prompts.sh ]]; then
+        set_run_dir "$scratch/case-readonly-$cleanup_launcher"
+        assert_private_handoffs "$run_dir"
+    fi
+    delete_status="$(run_launcher delete-fail "$cleanup_launcher" "${cleanup_arguments[@]}")"
+    [[ "$delete_status" -ne 0 ]] || fail "$cleanup_launcher ignored deletion failure"
+    delete_case="$scratch/case-delete-fail-$cleanup_launcher"
+    set_run_dir "$delete_case"
+    grep -F "could not delete $run_dir/home" "$delete_case/stdout" "$delete_case/stderr" >/dev/null ||
+        fail "$cleanup_launcher did not name the failed deletion"
+    if grep -F 'removal was not confirmed' "$delete_case/stdout" "$delete_case/stderr" >/dev/null; then
+        fail "$cleanup_launcher misreported confirmed container removal"
+    fi
+    [[ -d "$run_dir/home" && -s "$run_dir/container.id" ]] || fail "failed cleanup lost retry state"
+    if [[ "$cleanup_launcher" == run_sequence_prompts.sh ]]; then
+        [[ -s "$run_dir/handoffs/conversation_1.txt" ]] || fail "failed cleanup lost handoffs"
+    fi
+done
 
 # Reject ambiguous state paths before mkdir or docker run can write anything.
 for invalid_kind in relative dot dotdot; do
