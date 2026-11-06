@@ -251,8 +251,16 @@ private_run_directory() {
 
     case "$state_root" in
         /*) ;;
-        *) state_root="$(pwd -P)/$state_root" ;;
+        *)
+            echo "Error: XDG_STATE_HOME must be an absolute path." >&2
+            return 1
+            ;;
     esac
+
+    if [[ "/$state_root/" == */./* || "/$state_root/" == */../* ]]; then
+        echo "Error: XDG_STATE_HOME must not contain . or .. path components." >&2
+        return 1
+    fi
 
     existing="$state_root"
     while [[ ! -d "$existing" ]]; do

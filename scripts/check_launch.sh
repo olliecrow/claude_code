@@ -301,18 +301,21 @@ run_launcher() {
         command=(timeout "$LAUNCH_TIMEOUT" "${command[@]}")
     fi
     local state_home="${LAUNCH_STATE_HOME:-$case_dir/xdg}"
-    env \
-        HOME="$fake_home" \
-        TMPDIR="$temp_root" \
-        XDG_STATE_HOME="$state_home" \
-        PATH="$mock_bin:$PATH" \
-        CLAUDE_CODE_OAUTH_TOKEN=dummyoauth \
-        DOCKER_MOCK_LOG="$log" \
-        DOCKER_MOCK_MODE="$mode" \
-        DOCKER_MOCK_ID="$container_id" \
-        DOCKER_MOCK_STATE="$state" \
-        "${command[@]}" "$@" \
-        > "$case_dir/stdout" 2> "$case_dir/stderr" || status=$?
+    (
+        cd -- "$fake_home"
+        env \
+            HOME="$fake_home" \
+            TMPDIR="$temp_root" \
+            XDG_STATE_HOME="$state_home" \
+            PATH="$mock_bin:$PATH" \
+            CLAUDE_CODE_OAUTH_TOKEN=dummyoauth \
+            DOCKER_MOCK_LOG="$log" \
+            DOCKER_MOCK_MODE="$mode" \
+            DOCKER_MOCK_ID="$container_id" \
+            DOCKER_MOCK_STATE="$state" \
+            "${command[@]}" "$@" \
+            > "$case_dir/stdout" 2> "$case_dir/stderr"
+    ) || status=$?
     printf '%s\n' "$status"
     if grep -F 'host-git' "$log" >/dev/null 2>&1; then
         fail "${script_name} ${mode} ran host Git"
@@ -440,6 +443,28 @@ linked_status="$(run_launcher linked run_sequence_prompts.sh "$linked_project" "
 [[ -L "$linked_project/plan" ]] || fail "linked plan directory was replaced"
 set_run_dir "$scratch/case-linked-run_sequence_prompts.sh"
 assert_private_handoffs "$run_dir"
+
+# Reject ambiguous state paths before mkdir or docker run can write anything.
+for invalid_kind in relative dot dotdot; do
+    invalid_base="$scratch/invalid-$invalid_kind"
+    mkdir -p "$invalid_base/project"
+    case "$invalid_kind" in
+        relative) invalid_state="relative-state" ;;
+        dot) invalid_state="$invalid_base/missing/./state" ;;
+        dotdot) invalid_state="$invalid_base/missing/../project/state" ;;
+    esac
+    invalid_status="$(
+        LAUNCH_STATE_HOME="$invalid_state" \
+            run_launcher "invalid-$invalid_kind" run_command.sh "$invalid_base/project" hello
+    )"
+    [[ "$invalid_status" -ne 0 ]] || fail "$invalid_kind state path was accepted"
+    invalid_case="$scratch/case-invalid-$invalid_kind-run_command.sh"
+    grep -F 'XDG_STATE_HOME' "$invalid_case/stderr" >/dev/null || fail "missing state path error"
+    relative_home="$invalid_case/home"
+    [[ ! -e "$invalid_base/missing" && ! -e "$invalid_base/project/state" &&
+        ! -e "$relative_home/relative-state" ]] || fail "invalid state path created directories"
+    [[ ! -e "$invalid_case/docker.log" ]] || fail "invalid state path started a container"
+done
 
 inside_project="$scratch/inside-project"
 mkdir -p "$inside_project"
