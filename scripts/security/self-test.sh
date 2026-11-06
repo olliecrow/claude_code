@@ -357,8 +357,14 @@ fi
 # A baseline that is missing or not an ancestor still scans all history.
 recorded_base="$(tr -d '[:space:]' < "$script_dir/reviewed-base")"
 [[ "$recorded_base" =~ ^[0-9a-f]{40}$ ]] || fail "reviewed baseline is not a commit id"
-git -C "$script_dir/../.." merge-base --is-ancestor "$recorded_base" HEAD ||
-    fail "reviewed baseline is not an ancestor of HEAD"
+# Validate checks out one commit, so the recorded object can be absent.
+# A full clone still rejects a missing or unrelated baseline.
+if git -C "$script_dir/../.." cat-file -e "${recorded_base}^{commit}" 2>/dev/null; then
+    git -C "$script_dir/../.." merge-base --is-ancestor "$recorded_base" HEAD ||
+        fail "reviewed baseline is not an ancestor of HEAD"
+elif [[ "$(git -C "$script_dir/../.." rev-parse --is-shallow-repository)" != true ]]; then
+    fail "reviewed baseline is not in this repository"
+fi
 
 baseline_repo="$scratch/baseline-repo"
 git init -q -b main "$baseline_repo"
