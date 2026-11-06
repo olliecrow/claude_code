@@ -99,6 +99,10 @@ printf '%s.%s.%s\n' "eyJ$(printf 'a%.0s' {1..20})" "$(printf 'b%.0s' {1..20})" "
 jwt_status=0
 bash "$text_check" "$scratch/jwt.txt" >/dev/null 2>&1 || jwt_status=$?
 [[ "$jwt_status" -eq 1 ]] || fail "JWT was accepted"
+# Token rules need a left boundary, so ordinary hyphenated words pass.
+word_text='See the risk-assessment-for-the-project-plan and task-list-item-with-long-name notes.'
+write_text "$scratch/words.txt" "$word_text"
+expect_text_ok "words containing sk-" "$scratch/words.txt"
 
 if command -v gitleaks >/dev/null 2>&1; then
     config="$script_dir/../../.gitleaks.toml"
@@ -118,6 +122,10 @@ if command -v gitleaks >/dev/null 2>&1; then
     check_gitleaks 0 placeholders "/home/dev/x /Users/YOU/x $placeholder_windows"
     check_gitleaks 1 oauth "$(cat "$scratch/sk-ant-oat01.txt")"
     check_gitleaks 1 api "$(cat "$scratch/sk-ant-api03.txt")"
+    check_gitleaks 1 openai "$(cat "$scratch/sk-proj.txt")"
+    check_gitleaks 1 "openai after text" "key: $(cat "$scratch/sk-proj.txt")"
+    check_gitleaks 1 jwt "$(cat "$scratch/jwt.txt")"
+    check_gitleaks 0 words "$word_text"
 else
     echo "Gitleaks fixture checks skipped: gitleaks is not installed."
 fi
