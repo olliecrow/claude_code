@@ -14,6 +14,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Argument-only checks also resolve auth, so isolate them from host state.
+mkdir -p "$scratch/test-home" "$scratch/test-state"
+export HOME="$scratch/test-home"
+export XDG_STATE_HOME="$scratch/test-state"
+
 fail() {
     echo "launch check failed: $1" >&2
     exit 1
